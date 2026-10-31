@@ -4,6 +4,7 @@ import UIKit
 
 struct CameraPreview: View {
     let session: AVCaptureSession
+    let previewImage: UIImage?
     let showGrid: Bool
     let onTapFocus: (CGPoint) -> Void
     let focusLocked: Bool
@@ -20,6 +21,17 @@ struct CameraPreview: View {
                 })
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    if let previewImage {
+                        Image(uiImage: previewImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay {
                     if showGrid {
                         ViewfinderGrid()
