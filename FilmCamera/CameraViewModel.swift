@@ -41,6 +41,7 @@ final class CameraViewModel: ObservableObject {
     @Published var showGrid = false
     @Published var focusLocked = false
     @Published var manualFocus: Float = 0.5
+    @Published var showEditor = false
 
     let cameraService = CameraService()
     private let renderer = FilmRenderer()
@@ -130,6 +131,7 @@ final class CameraViewModel: ObservableObject {
 
             let finalImage = renderer.crop(image, to: selectedAspectRatio.value)
             latestImage = finalImage
+            showEditor = true
             await saveToPhotos(finalImage, rawURL: rawURL)
             if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
         } catch {
