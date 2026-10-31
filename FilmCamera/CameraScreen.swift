@@ -31,6 +31,11 @@ struct CameraScreen: View {
                     }
                 }
                 .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    camera.focus(at: CGPoint(x: max(0, min(1, point.x / max(1, UIScreen.main.bounds.width))),
+                                             y: max(0, min(1, point.y / max(1, UIScreen.main.bounds.height)))))
+                }
 
                 lookPicker
                 captureControls
@@ -208,17 +213,23 @@ struct CameraScreen: View {
 
     private var captureControls: some View {
         HStack(spacing: 0) {
-            Button {
-                camera.flashMode = camera.flashMode == .off ? .on : .off
+            Menu {
+                Button("Flash off") { camera.flashMode = .off }
+                Button("Flash on") { camera.flashMode = .on }
+                Button("Flash auto") { camera.flashMode = .auto }
             } label: {
-                Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.slash")
+                Image(systemName: camera.flashMode == .off ? "bolt.slash" : "bolt.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.white)
                     .frame(width: 58, height: 58)
             }
             .frame(maxWidth: .infinity)
 
-            Button { camera.capture() } label: {
+            VStack(spacing: 2) {
+                Text("FRAME  \(camera.framesShot + 1)/\(camera.rollLength)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.65))
+                Button { camera.capture() } label: {
                 Circle()
                     .fill(.white)
                     .frame(width: 76, height: 76)
@@ -230,7 +241,8 @@ struct CameraScreen: View {
                     }
             }
             .disabled(!camera.cameraReady || camera.isCapturing)
-            .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity)
+            }
 
             Button {
                 camera.captureRAW.toggle()
@@ -252,41 +264,101 @@ struct CameraScreen: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 6)
+        .overlay(alignment: .topTrailing) {
+            Menu {
+                Button("Timer off") { camera.timerSeconds = 0 }
+                Button("3 seconds") { camera.timerSeconds = 3 }
+                Button("10 seconds") { camera.timerSeconds = 10 }
+            } label: {
+                Label(camera.timerSeconds == 0 ? "Timer" : "\(camera.timerSeconds)s", systemImage: "timer")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.white.opacity(0.08), in: Capsule())
+            }
+            .offset(y: -32)
+            .padding(.trailing, 24)
+        }
     }
 
     private var settingsSheet: some View {
         NavigationStack {
             Form {
-                Section("Film character") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Grain")
-                            Spacer()
-                            Text("\(Int(camera.grainStrength * 100))%")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: Binding(
-                            get: { Double(camera.grainStrength) },
-                            set: { camera.grainStrength = Float($0) }
-                        ), in: 0...0.65, step: 0.01)
-                        Text("Applied to the live viewfinder and the processed photo.")
-                            .font(.caption)
+                Section("Film roll") {
+                    Picker("Roll length", selection: Binding(
+                        get: { camera.rollLength },
+                        set: { camera.setRollLength($0) }
+                    )) {
+                        Text("24 frames").tag(24)
+                        Text("36 frames").tag(36)
+                    }
+                    HStack {
+                        Text("Frames remaining")
+                        Spacer()
+                        Text("\(camera.framesRemaining) / \(camera.rollLength)")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
+                    }
+                    Button("Load a new roll", systemImage: "arrow.clockwise") {
+                        camera.reloadRoll()
                     }
                 }
 
-                Section("Capture") {
-                    Toggle("RAW (if supported)", isOn: $camera.captureRAW)
-                        .disabled(!camera.rawAvailable)
-                    Text(camera.rawAvailable
-                         ? "RAW is available from this camera configuration. RAW files are not film-rendered in this version; switch to JPG for the film look."
-                         : "RAW is not exposed by this camera configuration.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Section("Film character / developer") {
+                    developerSlider("Grain", value: Binding(
+                        get: { Double(camera.grainStrength) },
+                        set: { camera.grainStrength = Float($0) }
+                    ), range: 0...0.65, valueText: "\(Int(camera.grainStrength * 100))%")
+                    developerSlider("Bloom", value: Binding(
+                        get: { Double(camera.bloomStrength) },
+                        set: { camera.bloomStrength = Float($0) }
+                    ), range: 0...0.8, valueText: "\(Int(camera.bloomStrength * 100))%")
+                    developerSlider("Vignette", value: Binding(
+                        get: { Double(camera.vignetteStrength) },
+                        set: { camera.vignetteStrength = Float($0) }
+                    ), range: 0...1, valueText: "\(Int(camera.vignetteStrength * 100))%")
+                }
 
+                Section("Manual exposure") {
+                    Toggle("Manual shutter + ISO", isOn: $camera.manualExposure)
+                    if camera.manualExposure {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack {
+                                Text("ISO")
+                                Spacer()
+                                Text("\(Int(camera.isoValue))").monospacedDigit()
+                            }
+                            Slider(value: Binding(
+                                get: { Double(camera.isoValue) },
+                                set: { camera.isoValue = Float($0) }
+                            ), in: 25...1600, step: 25)
+                            HStack {
+                                Text("Shutter")
+                                Spacer()
+                                Text("1/\(max(1, Int(1 / camera.shutterSeconds)))").monospacedDigit()
+                            }
+                            Slider(value: Binding(
+                                get: { log2(camera.shutterSeconds) },
+                                set: { camera.shutterSeconds = pow(2, $0) }
+                            ), in: -13 ... -1, step: 0.25)
+                            Text("The camera clamps values to the active lens's supported range.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle("Manual focus", isOn: $camera.manualFocus)
+                    if camera.manualFocus {
+                        HStack {
+                            Text("Focus distance")
+                            Slider(value: Binding(
+                                get: { Double(camera.focusPosition) },
+                                set: { camera.focusPosition = Float($0) }
+                            ), in: 0...1)
+                        }
+                    }
                     HStack {
-                        Text("Exposure")
+                        Text("Exposure compensation")
                         Slider(value: Binding(
                             get: { Double(camera.exposureBias) },
                             set: { camera.setExposure(Float($0)) }
@@ -297,10 +369,25 @@ struct CameraScreen: View {
                     }
                 }
 
+                Section("Capture") {
+                    Toggle("RAW + developed JPEG", isOn: $camera.captureRAW)
+                        .disabled(!camera.rawAvailable)
+                    Text(camera.rawAvailable
+                         ? "Preserves the camera RAW original alongside the developed film JPEG."
+                         : "RAW is not available from the current camera configuration. JPEG capture remains available.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Picker("Self timer", selection: $camera.timerSeconds) {
+                        Text("Off").tag(0)
+                        Text("3 seconds").tag(3)
+                        Text("10 seconds").tag(10)
+                    }
+                }
+
                 Section("iPhone processing") {
                     LabeledContent("Apple Smart HDR / Deep Fusion", value: "iOS controlled")
-                    LabeledContent("App film look", value: "Live preview + JPG")
-                    Text("Apple does not provide public controls to switch off all internal camera processing. FilmCamera applies its own rendering after capture and to the live preview.")
+                    LabeledContent("Film rendering", value: "Live + full-resolution still")
+                    Text("Apple does not expose a public switch to disable every internal computational photography stage. Manual exposure uses supported AVFoundation controls; other iOS processing may still occur.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -314,6 +401,17 @@ struct CameraScreen: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func developerSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, valueText: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(valueText).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range)
+        }
     }
 
     private var galleryViewer: some View {
