@@ -190,7 +190,7 @@ struct CameraScreen: View {
                 HStack(spacing: 10) {
                     ForEach(FilmLook.all) { look in
                         Button {
-                            camera.selectedLook = look
+                            camera.selectLook(look)
                         } label: {
                             VStack(spacing: 6) {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
