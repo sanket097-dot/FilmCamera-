@@ -29,7 +29,7 @@ final class CameraViewModel: ObservableObject {
     @Published var authorizationGranted = false
     @Published var cameraReady = false
     @Published var statusMessage = "Preparing camera…"
-    @Published var selectedLook: FilmLook = .portra400 { didSet { updatePreviewLook() } }
+    @Published var selectedLook: FilmLook = .portra400
     @Published var captureRAW = true
     @Published var rawAvailable = false
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
@@ -38,7 +38,7 @@ final class CameraViewModel: ObservableObject {
     @Published var latestImage: UIImage?
     @Published var previewImage: UIImage?
     @Published var showSettings = false
-    @Published var grainStrength: Float = 0.12 { didSet { updatePreviewLook() } }
+    @Published var grainStrength: Float = 0.12
     @Published var selectedAspectRatio: ViewfinderAspectRatio = .ratio4x3
     @Published var showGrid = false
     @Published var focusLocked = false
@@ -57,9 +57,6 @@ final class CameraViewModel: ObservableObject {
                 self?.statusMessage = message
             }
         }
-        cameraService.onVideoFrame = { [weak self] image in
-            Task { @MainActor in self?.previewImage = image }
-        }
         cameraService.onCapture = { [weak self] result in
             Task { @MainActor in await self?.processCapture(result) }
         }
@@ -72,7 +69,6 @@ final class CameraViewModel: ObservableObject {
             statusMessage = "Camera access is required. Enable it in Settings."
             return
         }
-        cameraService.setFilmLook(selectedLook, grain: grainStrength)
         cameraService.configureAndStart()
         cameraService.setExposureBias(exposureBias)
     }
@@ -98,10 +94,6 @@ final class CameraViewModel: ObservableObject {
         guard cameraReady, !isCapturing else { return }
         isCapturing = true
         cameraService.capture(raw: captureRAW && rawAvailable, flash: flashMode)
-    }
-
-    private func updatePreviewLook() {
-        cameraService.setFilmLook(selectedLook, grain: grainStrength)
     }
 
     private func processCapture(_ result: Result<CameraCapture, Error>) async {
