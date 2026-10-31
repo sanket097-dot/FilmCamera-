@@ -3,7 +3,12 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 final class FilmRenderer {
-    private let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
+    private let context = CIContext(options: [
+        .useSoftwareRenderer: false,
+        .cacheIntermediates: false,
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+        .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
+    ])
     private var cubeCache: [String: Data] = [:]
     private let cacheLock = NSLock()
 
@@ -24,7 +29,7 @@ final class FilmRenderer {
     // A lighter live-view render: colour LUT, fade and subtle vignette at preview resolution.
     // Capture processing remains independent and uses the full-resolution still.
     func renderPreview(_ source: CIImage, look: FilmLook) -> UIImage? {
-        let maxDimension: CGFloat = 960
+        let maxDimension: CGFloat = 720
         let scale = min(1, maxDimension / max(source.extent.width, source.extent.height))
         let previewSource = scale < 1
             ? source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
