@@ -5,67 +5,72 @@ import CoreImage.CIFilterBuiltins
 final class FilmRenderer {
     private let context = CIContext(options: [.useSoftwareRenderer: false])
 
-    func render(_ image: UIImage, look: FilmLook) throws -> UIImage {
-        guard var ciImage = CIImage(image: image) else {
+    func render(_ image: UIImage, look: FilmLook, grain: Float? = nil) throws -> UIImage {
+        guard let source = CIImage(image: image) else {
             throw RenderError.invalidImage
         }
+        let ciImage = applying(look, to: source, grain: grain ?? look.grain)
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            throw RenderError.renderFailed
+        }
+        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+    }
 
-        // Work in the source image's extent; all processing is non-destructive.
-        let extent = ciImage.extent
+    func applying(_ look: FilmLook, to source: CIImage, grain: Float) -> CIImage {
+        var image = source
+        let extent = source.extent
 
         if look.monochrome {
             let mono = CIFilter.photoEffectNoir()
-            mono.inputImage = ciImage
-            ciImage = mono.outputImage ?? ciImage
+            mono.inputImage = image
+            image = mono.outputImage ?? image
         }
 
         let color = CIFilter.colorControls()
-        color.inputImage = ciImage
+        color.inputImage = image
         color.saturation = look.saturation
         color.contrast = look.contrast
         color.brightness = look.brightness
-        ciImage = color.outputImage ?? ciImage
+        image = color.outputImage ?? image
 
         if abs(look.warmth) > 0.001 {
             let temp = CIFilter.temperatureAndTint()
-            temp.inputImage = ciImage
+            temp.inputImage = image
             temp.neutral = CIVector(x: 6500, y: 0)
             temp.targetNeutral = CIVector(x: 6500 + CGFloat(look.warmth * 1200), y: 0)
-            ciImage = temp.outputImage ?? ciImage
+            image = temp.outputImage ?? image
         }
 
         if look.fade > 0 {
-            let controls = CIFilter.colorControls()
-            controls.inputImage = ciImage
-            controls.saturation = 1
-            controls.contrast = 1 - (look.fade * 0.45)
-            controls.brightness = look.fade * 0.10
-            ciImage = controls.outputImage ?? ciImage
+            let fade = CIFilter.colorControls()
+            fade.inputImage = image
+            fade.saturation = 1
+            fade.contrast = 1 - (look.fade * 0.45)
+            fade.brightness = look.fade * 0.10
+            image = fade.outputImage ?? image
         }
 
-        // Subtle grain starter: CI noise is blended at low opacity.
-        if look.grain > 0 {
+        let amount = max(0, min(0.65, grain))
+        if amount > 0.001 {
             let noise = CIFilter.randomGenerator()
             if let noiseImage = noise.outputImage?.cropped(to: extent) {
                 let monoNoise = CIFilter.colorControls()
                 monoNoise.inputImage = noiseImage
                 monoNoise.saturation = 0
                 monoNoise.contrast = 1.3
-                let blend = CIFilter.softLightBlendMode()
-                blend.inputImage = monoNoise.outputImage?.applyingFilter(
+
+                let alpha = monoNoise.outputImage?.applyingFilter(
                     "CIColorMatrix",
                     parameters: [
-                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(look.grain))
+                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(amount))
                     ])
-                blend.backgroundImage = ciImage
-                ciImage = blend.outputImage ?? ciImage
+                let blend = CIFilter.softLightBlendMode()
+                blend.inputImage = alpha
+                blend.backgroundImage = image
+                image = blend.outputImage?.cropped(to: extent) ?? image
             }
         }
-
-        guard let cgImage = context.createCGImage(ciImage, from: extent) else {
-            throw RenderError.renderFailed
-        }
-        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        return image.cropped(to: extent)
     }
 
     enum RenderError: LocalizedError {
