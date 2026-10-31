@@ -7,6 +7,8 @@ struct CameraScreen: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var galleryImage: UIImage?
     @State private var showGalleryImage = false
+    @State private var editorImage: UIImage?
+    @State private var showEditor = false
 
     var body: some View {
         ZStack {
@@ -22,9 +24,11 @@ struct CameraScreen: View {
                     CameraPreview(
                         image: camera.previewImage,
                         aspectRatio: camera.selectedAspectRatio.value,
-                        showGrid: camera.showGrid
+                        showGrid: camera.showGrid,
+                        onTapFocus: { camera.setFocusPoint($0) },
+                        focusLocked: camera.focusLocked
                     )
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 8)
 
                     if !camera.authorizationGranted {
                         permissionView
@@ -32,6 +36,7 @@ struct CameraScreen: View {
                 }
                 .frame(maxHeight: .infinity)
 
+                liveControls
                 lookPicker
                 captureControls
 
@@ -60,6 +65,16 @@ struct CameraScreen: View {
         }
         .sheet(isPresented: $showGalleryImage) {
             galleryViewer
+        }
+        .sheet(isPresented: $showEditor) {
+            if let editorImage {
+                PhotoEditorView(image: editorImage)
+            }
+        }
+        .onChange(of: camera.latestImage) { _, image in
+            guard let image else { return }
+            editorImage = image
+            showEditor = true
         }
     }
 
@@ -154,6 +169,34 @@ struct CameraScreen: View {
         .foregroundStyle(.white)
         .padding(28)
         .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var liveControls: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("EXPOSURE").font(.system(size: 9, weight: .bold)).tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.65))
+                Slider(value: Binding(get: { Double(camera.exposureBias) },
+                                      set: { camera.setExposure(Float($0)) }), in: -2...2, step: 0.1)
+                Text(camera.exposureBias.formatted(.number.precision(.fractionLength(1))) + " EV")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white).frame(width: 48)
+            }
+            HStack {
+                Text("FOCUS").font(.system(size: 9, weight: .bold)).tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.65))
+                Slider(value: Binding(get: { Double(camera.manualFocus) },
+                                      set: { camera.setManualFocus(Float($0)) }), in: 0...1)
+                Button { camera.toggleFocusLock() } label: {
+                    Image(systemName: camera.focusLocked ? "lock.fill" : "lock.open")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(camera.focusLocked ? .yellow : .white)
+                        .frame(width: 34, height: 30).background(.white.opacity(0.10), in: Circle())
+                }
+                .accessibilityLabel(camera.focusLocked ? "Unlock AE AF" : "Lock AE AF")
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 8)
     }
 
     private var lookPicker: some View {
