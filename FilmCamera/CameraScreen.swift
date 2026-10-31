@@ -7,9 +7,7 @@ struct CameraScreen: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var galleryImage: UIImage?
     @State private var showGalleryImage = false
-    @State private var editorImage: UIImage?
-    @State private var showEditor = false
-
+    
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -66,15 +64,10 @@ struct CameraScreen: View {
         .sheet(isPresented: $showGalleryImage) {
             galleryViewer
         }
-        .sheet(isPresented: $showEditor) {
-            if let editorImage {
-                PhotoEditorView(image: editorImage)
+        .sheet(isPresented: $camera.showEditor) {
+            if let image = camera.latestImage {
+                PhotoEditorView(image: image)
             }
-        }
-        .onChange(of: camera.latestImage) { _, image in
-            guard let image else { return }
-            editorImage = image
-            showEditor = true
         }
     }
 
