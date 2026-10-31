@@ -88,7 +88,7 @@ final class CameraService: NSObject {
             } else {
                 settings = AVCapturePhotoSettings()
                 settings.photoQualityPrioritization = .quality
-                if self.photoOutput.supportedFlashModes.contains(NSNumber(value: flash.rawValue)) {
+                if self.photoOutput.supportedFlashModes.contains(flash) {
                     settings.flashMode = flash
                 }
             }
