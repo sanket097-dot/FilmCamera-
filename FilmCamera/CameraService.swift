@@ -61,7 +61,7 @@ final class CameraService: NSObject {
                 }
                 let detail = hasProRAW ? "Apple ProRAW + JPEG ready" :
                     (rawAvailable ? "Bayer RAW + JPEG ready" : "Processed JPEG capture")
-                self.onStateChange?(true, rawAvailable, "Live film preview · \(detail)")
+                self.onStateChange?(true, rawAvailable, "Natural live preview · \(detail)")
             } catch {
                 if self.session.isRunning { self.session.stopRunning() }
                 if self.session.isInterrupted == false {
