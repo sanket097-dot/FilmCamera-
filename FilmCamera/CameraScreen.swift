@@ -71,8 +71,8 @@ struct CameraScreen: View {
                 }
             }
         }
-        .ignoresSafeArea()
-        .background(Color.black)
+        .ignoresSafeArea(edges: .bottom)
+        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await camera.start() }
         .onChange(of: selectedPhoto) { _, item in
