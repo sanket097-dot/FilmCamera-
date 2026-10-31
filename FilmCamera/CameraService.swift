@@ -1,6 +1,8 @@
 import Foundation
 import AVFoundation
 import UIKit
+import CoreImage
+import CoreVideo
 
 struct CameraCapture {
     let rawData: Data?
@@ -10,13 +12,17 @@ struct CameraCapture {
 final class CameraService: NSObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "film.camera.session")
+    private let videoQueue = DispatchQueue(label: "film.camera.preview", qos: .userInitiated)
+    private var lastPreviewFrameTime: TimeInterval = 0
     private var activeDevice: AVCaptureDevice?
     private var photoDelegate: PhotoCaptureDelegate?
     private var configured = false
 
     var onStateChange: ((Bool, Bool, String) -> Void)?
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
+    var onPreviewFrame: ((CIImage) -> Void)?
 
     func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -46,6 +52,14 @@ final class CameraService: NSObject {
                     guard self.session.canAddOutput(self.photoOutput) else { throw CameraError.setupFailed }
                     self.session.addOutput(self.photoOutput)
                     self.photoOutput.maxPhotoQualityPrioritization = .quality
+
+                    self.videoOutput.videoSettings = [
+                        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+                    ]
+                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                    self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+                    guard self.session.canAddOutput(self.videoOutput) else { throw CameraError.setupFailed }
+                    self.session.addOutput(self.videoOutput)
                     if self.photoOutput.isAppleProRAWSupported {
                         self.photoOutput.isAppleProRAWEnabled = true
                     }
@@ -161,6 +175,17 @@ final class CameraService: NSObject {
             self.photoDelegate = delegate
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
+    }
+}
+
+extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastPreviewFrameTime >= (1.0 / 12.0) else { return }
+        lastPreviewFrameTime = now
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        onPreviewFrame?(CIImage(cvPixelBuffer: pixelBuffer))
     }
 }
 
