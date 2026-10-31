@@ -102,8 +102,9 @@ final class CameraViewModel: ObservableObject {
                 return
             }
             let rendered = try renderer.render(source, look: selectedLook, grain: grainStrength)
-            latestImage = rendered
-            await saveToPhotos(rendered)
+            let finalImage = renderer.crop(rendered, to: selectedAspectRatio.value)
+            latestImage = finalImage
+            await saveToPhotos(finalImage)
         } catch {
             statusMessage = "Capture failed: \(error.localizedDescription)"
         }
