@@ -192,7 +192,8 @@ final class CameraService: NSObject {
             } else {
                 settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             }
-            // Speed priority preserves explicitly locked manual shutter and ISO values.\n            settings.photoQualityPrioritization = self.manualExposureEnabled ? .speed : .quality
+            // Speed priority preserves explicitly locked manual shutter and ISO values.
+            settings.photoQualityPrioritization = self.manualExposureEnabled ? .speed : .quality
             if self.photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
             }
