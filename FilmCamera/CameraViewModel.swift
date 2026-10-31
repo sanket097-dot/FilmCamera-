@@ -48,6 +48,8 @@ final class CameraViewModel: ObservableObject {
     let cameraService = CameraService()
     private let renderer = FilmRenderer()
     private let previewRenderQueue = DispatchQueue(label: "film.camera.live-render", qos: .userInitiated)
+    private var previewRenderInFlight = false
+    private var pendingPreviewFrame: CIImage?
 
     init() {
         cameraService.onStateChange = { [weak self] ready, raw, message in
@@ -64,10 +66,31 @@ final class CameraViewModel: ObservableObject {
         cameraService.onPreviewFrame = { [weak self] frame in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let look = self.selectedLook
-                self.previewRenderQueue.async { [weak self] in
-                    guard let self, let image = self.renderer.renderPreview(frame, look: look) else { return }
-                    DispatchQueue.main.async { [weak self] in self?.previewImage = image }
+                // Keep at most one pending frame. A slow render must never create an
+                // unbounded queue of retained camera pixel buffers.
+                guard !self.previewRenderInFlight else {
+                    self.pendingPreviewFrame = frame
+                    return
+                }
+                self.renderNextPreviewFrame(frame)
+            }
+        }
+    }
+
+    private func renderNextPreviewFrame(_ frame: CIImage) {
+        previewRenderInFlight = true
+        let look = selectedLook
+        previewRenderQueue.async { [weak self] in
+            guard let self else { return }
+            let rendered = self.renderer.renderPreview(frame, look: look)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let rendered { self.previewImage = rendered }
+                if let pending = self.pendingPreviewFrame {
+                    self.pendingPreviewFrame = nil
+                    self.renderNextPreviewFrame(pending)
+                } else {
+                    self.previewRenderInFlight = false
                 }
             }
         }
