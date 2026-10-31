@@ -21,6 +21,19 @@ final class FilmRenderer {
         return UIImage(cgImage: cgImage, scale: 1, orientation: orientation)
     }
 
+    // A lighter live-view render: colour LUT, fade and subtle vignette at preview resolution.
+    // Capture processing remains independent and uses the full-resolution still.
+    func renderPreview(_ source: CIImage, look: FilmLook) -> UIImage? {
+        let maxDimension: CGFloat = 960
+        let scale = min(1, maxDimension / max(source.extent.width, source.extent.height))
+        let previewSource = scale < 1
+            ? source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            : source
+        let output = applying(look, to: previewSource, grain: 0)
+        guard let cgImage = context.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
     func applying(_ look: FilmLook, to source: CIImage, grain: Float) -> CIImage {
         let extent = source.extent
         var image = source
