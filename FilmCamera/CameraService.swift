@@ -115,17 +115,17 @@ final class CameraService: NSObject {
         }
     }
 
-    func setFocus(_ point: CGPoint) {
+    func setFocusAndExposure(point: CGPoint) {
         sessionQueue.async {
             guard let device = self.activeDevice else { return }
             do {
                 try device.lockForConfiguration()
                 if device.isFocusPointOfInterestSupported {
-                    device.focusPointOfInterest = point
+                    device.focusPointOfInterest = CGPoint(x: point.x, y: 1 - point.y)
                     if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
                 }
                 if device.isExposurePointOfInterestSupported {
-                    device.exposurePointOfInterest = point
+                    device.exposurePointOfInterest = CGPoint(x: point.x, y: 1 - point.y)
                     if device.isExposureModeSupported(.continuousAutoExposure) {
                         device.exposureMode = .continuousAutoExposure
                     }
