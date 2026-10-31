@@ -22,6 +22,7 @@ final class CameraService: NSObject {
     private var grainStrength: Float = 0.12
     private var frameNumber = 0
     private var configured = false
+    private var manualExposureEnabled = false
 
     var onStateChange: ((Bool, Bool, String) -> Void)?
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
@@ -135,6 +136,48 @@ final class CameraService: NSObject {
         }
     }
 
+
+    func setManualExposure(enabled: Bool, iso: Float, shutterSeconds: Double) {
+        sessionQueue.async {
+            guard let device = self.activeDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                if enabled && device.isExposureModeSupported(.custom) {
+                    let minISO = device.activeFormat.minISO
+                    let maxISO = device.activeFormat.maxISO
+                    let safeISO = max(minISO, min(maxISO, iso))
+                    let minDuration = CMTimeGetSeconds(device.activeFormat.minExposureDuration)
+                    let maxDuration = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
+                    let seconds = max(minDuration, min(maxDuration, shutterSeconds))
+                    let duration = CMTime(seconds: seconds, preferredTimescale: 1_000_000)
+                    device.setExposureModeCustom(duration: duration, iso: safeISO)
+                    self.manualExposureEnabled = true
+                } else {
+                    if device.isExposureModeSupported(.continuousAutoExposure) {
+                        device.exposureMode = .continuousAutoExposure
+                    }
+                    self.manualExposureEnabled = false
+                }
+                device.unlockForConfiguration()
+            } catch { }
+        }
+    }
+
+    func setManualFocus(_ position: Float, enabled: Bool) {
+        sessionQueue.async {
+            guard let device = self.activeDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                if enabled && device.isLockingFocusWithCustomLensPositionSupported {
+                    device.setFocusModeLocked(lensPosition: max(0, min(1, position)))
+                } else if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
+                }
+                device.unlockForConfiguration()
+            } catch { }
+        }
+    }
+
     func capture(raw: Bool, flash: AVCaptureDevice.FlashMode) {
         sessionQueue.async {
             let settings: AVCapturePhotoSettings
@@ -145,7 +188,7 @@ final class CameraService: NSObject {
             } else {
                 settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             }
-            settings.photoQualityPrioritization = .quality
+            // Speed priority preserves explicitly locked manual shutter and ISO values.\n            settings.photoQualityPrioritization = self.manualExposureEnabled ? .speed : .quality
             if self.photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
             }
