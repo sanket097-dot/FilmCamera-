@@ -73,6 +73,22 @@ final class FilmRenderer {
         return image.cropped(to: extent)
     }
 
+    func crop(_ image: UIImage, to aspectRatio: CGFloat) -> UIImage {
+        guard let source = CIImage(image: image), aspectRatio > 0 else { return image }
+        let extent = source.extent
+        let currentRatio = extent.width / extent.height
+        let cropRect: CGRect
+        if currentRatio > aspectRatio {
+            let width = extent.height * aspectRatio
+            cropRect = CGRect(x: extent.midX - width / 2, y: extent.minY, width: width, height: extent.height)
+        } else {
+            let height = extent.width / aspectRatio
+            cropRect = CGRect(x: extent.minX, y: extent.midY - height / 2, width: extent.width, height: height)
+        }
+        guard let cgImage = context.createCGImage(source.cropped(to: cropRect), from: cropRect) else { return image }
+        return UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
+    }
+
     enum RenderError: LocalizedError {
         case invalidImage
         case renderFailed
