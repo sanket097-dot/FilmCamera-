@@ -152,7 +152,7 @@ final class CameraViewModel: ObservableObject {
                     do {
                         if let rawData = capture.rawData {
                             let url = FileManager.default.temporaryDirectory
-                                .appendingPathComponent("FilmCamera-\\(UUID().uuidString).dng")
+                                .appendingPathComponent("FilmCamera-\(UUID().uuidString).dng")
                             try rawData.write(to: url, options: .atomic)
                             rawURL = url
                         }
@@ -178,7 +178,14 @@ final class CameraViewModel: ObservableObject {
             await saveToPhotos(finalImage, rawURL: rawURL)
             if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
         } catch {
-            statusMessage = "Capture failed: \\(error.localizedDescription)"
+            statusMessage = "Capture failed: \(error.localizedDescription)"
+        }
+    }
+
+    private enum CaptureProcessingError: LocalizedError {
+        case missingProcessedImage
+        var errorDescription: String? {
+            "The camera did not provide a processed JPEG companion."
         }
     }
 
