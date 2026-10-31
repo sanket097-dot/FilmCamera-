@@ -135,6 +135,35 @@ final class CameraService: NSObject {
         }
     }
 
+    func setFocusLocked(_ locked: Bool) {
+        sessionQueue.async {
+            guard let device = self.activeDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                if locked {
+                    if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+                    if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
+                } else {
+                    if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+                    if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+                }
+                device.unlockForConfiguration()
+            } catch { }
+        }
+    }
+
+    func setManualFocus(_ position: Float) {
+        sessionQueue.async {
+            guard let device = self.activeDevice,
+                  device.isLockingFocusWithCustomLensPositionSupported else { return }
+            do {
+                try device.lockForConfiguration()
+                device.setFocusModeLocked(lensPosition: max(0, min(1, position)))
+                device.unlockForConfiguration()
+            } catch { }
+        }
+    }
+
     func capture(raw: Bool, flash: AVCaptureDevice.FlashMode) {
         sessionQueue.async {
             let settings: AVCapturePhotoSettings
