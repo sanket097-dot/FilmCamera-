@@ -11,13 +11,11 @@ struct CameraScreen: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let topInset = geometry.safeAreaInsets.top
-            let bottomInset = geometry.safeAreaInsets.bottom
-            // GeometryReader is extended edge-to-edge below, so subtract the safe
-            // areas exactly once and allocate the remaining height to the preview.
-            let usableHeight = max(0, geometry.size.height - topInset - bottomInset)
-            let fixedControlsHeight: CGFloat = 52 + 60 + 32 + 90 + 8 + 88 + 18
-            let previewHeight = max(190, min(usableHeight - fixedControlsHeight, geometry.size.width * 1.18))
+            // GeometryReader remains within the safe area. Insets are not added
+            // a second time, which previously shifted the whole interface off-screen.
+            let usableHeight = geometry.size.height
+            let reservedHeight: CGFloat = 52 + 8 + 60 + 30 + 106 + 8 + 88 + 16 + 24
+            let previewHeight = max(180, min(usableHeight - reservedHeight, geometry.size.width * 1.12))
 
             VStack(spacing: 0) {
                 header
@@ -26,6 +24,7 @@ struct CameraScreen: View {
 
                 CameraPreview(
                     session: camera.cameraService.session,
+                    previewImage: camera.previewImage,
                     showGrid: camera.showGrid,
                     onTapFocus: { camera.setFocusPoint($0) },
                     focusLocked: camera.focusLocked
@@ -38,7 +37,7 @@ struct CameraScreen: View {
 
                 cameraToolbar
                     .padding(.horizontal, 12)
-                    .padding(.top, 8)
+                    .padding(.top, 6)
                     .frame(height: 60)
 
                 exposureControl
@@ -47,10 +46,10 @@ struct CameraScreen: View {
                     .frame(height: 30)
 
                 filmPicker
-                    .padding(.top, 7)
-                    .frame(height: 90)
+                    .padding(.top, 6)
+                    .frame(height: 106)
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 4)
 
                 shutterDock
                     .padding(.horizontal, 22)
@@ -65,8 +64,8 @@ struct CameraScreen: View {
                     .frame(height: 17)
                     .padding(.top, 2)
             }
-            .padding(.top, topInset + 8)
-            .padding(.bottom, bottomInset + 8)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .background(Color.black)
             .overlay {
@@ -75,7 +74,6 @@ struct CameraScreen: View {
                 }
             }
         }
-        .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await camera.start() }
@@ -375,7 +373,7 @@ struct CameraScreen: View {
                             get: { Double(camera.grainStrength) },
                             set: { camera.grainStrength = Float($0) }
                         ), in: 0...0.65, step: 0.01)
-                        Text("Film grain is applied to the developed capture. The live viewfinder stays natural and clear.")
+                        Text("The selected film colour profile is previewed live. Grain is added to the full-resolution developed capture.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -390,8 +388,8 @@ struct CameraScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Camera behavior") {
-                    LabeledContent("Live preview", value: "Natural iPhone camera feed")
-                    LabeledContent("Film look", value: "Applied after capture")
+                    LabeledContent("Live preview", value: "Selected film stock emulation")
+                    LabeledContent("Capture", value: "Full-resolution film render + original RAW")
                     Text("Tap the viewfinder to set focus and metering. Use the sun control for exposure compensation.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
