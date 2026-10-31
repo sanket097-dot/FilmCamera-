@@ -13,13 +13,16 @@ struct CameraScreen: View {
         GeometryReader { geometry in
             let topInset = geometry.safeAreaInsets.top
             let bottomInset = geometry.safeAreaInsets.bottom
-            let usableHeight = max(560, geometry.size.height - topInset - bottomInset)
-            let previewHeight = min(usableHeight * 0.46, geometry.size.width * 1.08)
+            // GeometryReader is extended edge-to-edge below, so subtract the safe
+            // areas exactly once and allocate the remaining height to the preview.
+            let usableHeight = max(0, geometry.size.height - topInset - bottomInset)
+            let fixedControlsHeight: CGFloat = 52 + 60 + 32 + 90 + 8 + 88 + 18
+            let previewHeight = max(190, min(usableHeight - fixedControlsHeight, geometry.size.width * 1.18))
 
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, 20)
-                    .frame(height: 48)
+                    .frame(height: 52)
 
                 CameraPreview(
                     session: camera.cameraService.session,
@@ -36,7 +39,7 @@ struct CameraScreen: View {
                 cameraToolbar
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
-                    .frame(height: 56)
+                    .frame(height: 60)
 
                 exposureControl
                     .padding(.horizontal, 20)
@@ -45,12 +48,13 @@ struct CameraScreen: View {
 
                 filmPicker
                     .padding(.top, 7)
+                    .frame(height: 90)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 8)
 
                 shutterDock
                     .padding(.horizontal, 22)
-                    .frame(height: 82)
+                    .frame(height: 88)
 
                 Text(camera.statusMessage)
                     .font(.system(size: 9, weight: .medium))
@@ -61,8 +65,8 @@ struct CameraScreen: View {
                     .frame(height: 17)
                     .padding(.top, 2)
             }
-            .padding(.top, topInset + 5)
-            .padding(.bottom, bottomInset + 4)
+            .padding(.top, topInset + 8)
+            .padding(.bottom, bottomInset + 8)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .background(Color.black)
             .overlay {
@@ -71,7 +75,7 @@ struct CameraScreen: View {
                 }
             }
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await camera.start() }
