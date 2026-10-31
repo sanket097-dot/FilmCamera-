@@ -205,7 +205,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastPreviewFrameTime >= (1.0 / 12.0) else { return }
+        guard now - lastPreviewFrameTime >= (1.0 / 8.0) else { return }
         lastPreviewFrameTime = now
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         onPreviewFrame?(CIImage(cvPixelBuffer: pixelBuffer))
