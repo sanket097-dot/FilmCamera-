@@ -21,9 +21,9 @@ final class FilmRenderer {
 
         let color = CIFilter.colorControls()
         color.inputImage = ciImage
-        color.saturation = CGFloat(look.saturation)
-        color.contrast = CGFloat(look.contrast)
-        color.brightness = CGFloat(look.brightness)
+        color.saturation = look.saturation
+        color.contrast = look.contrast
+        color.brightness = look.brightness
         ciImage = color.outputImage ?? ciImage
 
         if abs(look.warmth) > 0.001 {
@@ -39,7 +39,7 @@ final class FilmRenderer {
             controls.inputImage = ciImage
             controls.saturation = 1
             controls.contrast = 1 - (look.fade * 0.45)
-            controls.brightness = CGFloat(look.fade * 0.10)
+            controls.brightness = look.fade * 0.10
             ciImage = controls.outputImage ?? ciImage
         }
 
