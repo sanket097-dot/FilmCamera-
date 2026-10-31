@@ -33,7 +33,7 @@ struct CameraPreview: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(focusLocked ? .yellow : .white, lineWidth: 1.5)
                             .frame(width: 62, height: 62)
-                            .position(x: point.x * width, y: point.y * height)
+                            .position(x: point.x * proxy.size.width, y: point.y * proxy.size.height)
                             .allowsHitTesting(false)
                     }
                 }
