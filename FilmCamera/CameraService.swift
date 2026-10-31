@@ -1,7 +1,6 @@
 import Foundation
 import AVFoundation
 import UIKit
-import CoreImage
 
 struct CameraCapture {
     let rawData: Data?
@@ -11,34 +10,20 @@ struct CameraCapture {
 final class CameraService: NSObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
-    private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "film.camera.session")
-    private let videoQueue = DispatchQueue(label: "film.camera.video", qos: .userInitiated)
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: true])
-    private let renderer = FilmRenderer()
     private var activeDevice: AVCaptureDevice?
     private var photoDelegate: PhotoCaptureDelegate?
-    private var currentLook = FilmLook.portra400
-    private var grainStrength: Float = 0.12
-    private var frameNumber = 0
     private var configured = false
 
     var onStateChange: ((Bool, Bool, String) -> Void)?
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
-    var onVideoFrame: ((UIImage) -> Void)?
 
     func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return true
         case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
         default: return false
-        }
-    }
-
-    func setFilmLook(_ look: FilmLook, grain: Float) {
-        sessionQueue.async {
-            self.currentLook = look
-            self.grainStrength = grain
         }
     }
 
@@ -66,15 +51,6 @@ final class CameraService: NSObject {
                         self.photoOutput.isAppleProRAWEnabled = true
                     }
 
-                    if self.session.canAddOutput(self.videoOutput) {
-                        self.videoOutput.videoSettings = [
-                            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-                        ]
-                        self.videoOutput.alwaysDiscardsLateVideoFrames = true
-                        self.session.addOutput(self.videoOutput)
-                        self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
-                        self.videoOutput.connection(with: .video)?.videoOrientation = .portrait
-                    }
                     self.session.commitConfiguration()
                     self.configured = true
                 }
@@ -185,28 +161,6 @@ final class CameraService: NSObject {
             }
             self.photoDelegate = delegate
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
-        }
-    }
-}
-
-extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput,
-                       didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection) {
-        frameNumber += 1
-        guard frameNumber % 2 == 0,
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
-        autoreleasepool {
-            let fullFrame = CIImage(cvPixelBuffer: pixelBuffer)
-            let scale = min(1.0, 1280.0 / max(fullFrame.extent.width, fullFrame.extent.height))
-            let source = scale < 1
-                ? fullFrame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                : fullFrame
-            let processed = renderer.applying(currentLook, to: source, grain: grainStrength)
-            guard let cgImage = ciContext.createCGImage(processed, from: processed.extent) else { return }
-            let frame = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
-            DispatchQueue.main.async { [weak self] in self?.onVideoFrame?(frame) }
         }
     }
 }
