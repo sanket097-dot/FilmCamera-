@@ -117,9 +117,16 @@ final class CameraViewModel: ObservableObject {
             var developed: UIImage?
             var rawURL: URL?
 
-            // Develop the camera's processed companion JPEG. Decoding a full-resolution
-            // Bayer/ProRAW frame synchronously on the UI actor can exhaust memory on phones.
-            // Keep the original DNG intact and save it as a separate Photos asset below.
+            // Preserve the original DNG without decoding it in memory. Developing a
+            // full-resolution Bayer/ProRAW frame on the UI actor can exhaust phone memory.
+            if let rawData = capture.rawData {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("FilmCamera-\\(UUID().uuidString).dng")
+                try rawData.write(to: url, options: .atomic)
+                rawURL = url
+            }
+
+            // Use the camera's processed companion JPEG for the film-developed output.
             if let processedData = capture.processedData,
                let processedImage = UIImage(data: processedData) {
                 developed = try renderer.render(processedImage, look: selectedLook, grain: grainStrength)
@@ -164,8 +171,12 @@ final class CameraViewModel: ObservableObject {
 
         do {
             try await PHPhotoLibrary.shared().performChanges {
-                // Save the developed film JPEG as a normal photo.
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
+                // Save the developed film JPEG as a normal photo asset.
+                let jpegRequest = PHAssetCreationRequest.forAsset()
+                let jpegOptions = PHAssetResourceCreationOptions()
+                jpegOptions.originalFilename = "FilmCamera-\\(self.selectedLook.id).jpg"
+                jpegOptions.uniformTypeIdentifier = UTType.jpeg.identifier
+                jpegRequest.addResource(with: .photo, data: jpeg, options: jpegOptions)
 
                 // Save the untouched DNG as its own RAW asset. Keeping the two assets
                 // separate avoids fragile RAW/JPEG alternate-resource pairing.
