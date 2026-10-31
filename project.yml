@@ -12,6 +12,11 @@ settings:
     INFOPLIST_KEY_NSCameraUsageDescription: "FilmCamera needs camera access to capture photographs."
     INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "FilmCamera saves your photographs to your library."
     INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    INFOPLIST_KEY_CFBundleDisplayName: "Film Camera"
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 targets:
   FilmCamera:
     type: application
