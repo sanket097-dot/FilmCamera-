@@ -1,15 +1,25 @@
 import Foundation
 import AVFoundation
+import UIKit
+import CoreImage
 
 final class CameraService: NSObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "film.camera.session")
+    private let videoQueue = DispatchQueue(label: "film.camera.video", qos: .userInitiated)
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private let renderer = FilmRenderer()
     private var activeDevice: AVCaptureDevice?
     private var photoDelegate: PhotoCaptureDelegate?
+    private var currentLook = FilmLook.portra400
+    private var grainStrength: Float = 0.12
+    private var frameNumber = 0
 
     var onStateChange: ((Bool, Bool, String) -> Void)?
     var onCapture: ((Result<Data, Error>) -> Void)?
+    var onVideoFrame: ((UIImage) -> Void)?
 
     func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -22,8 +32,16 @@ final class CameraService: NSObject {
         }
     }
 
+    func setFilmLook(_ look: FilmLook, grain: Float) {
+        sessionQueue.async {
+            self.currentLook = look
+            self.grainStrength = grain
+        }
+    }
+
     func configureAndStart() {
         sessionQueue.async {
+            guard !self.session.isRunning else { return }
             do {
                 self.session.beginConfiguration()
                 self.session.sessionPreset = .photo
@@ -41,6 +59,15 @@ final class CameraService: NSObject {
                 if self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
                 }
+                if self.session.canAddOutput(self.videoOutput) {
+                    self.videoOutput.videoSettings = [
+                        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+                    ]
+                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                    self.session.addOutput(self.videoOutput)
+                    self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+                    self.videoOutput.connection(with: .video)?.videoOrientation = .portrait
+                }
 
                 self.photoOutput.maxPhotoQualityPrioritization = .quality
                 self.session.commitConfiguration()
@@ -49,8 +76,8 @@ final class CameraService: NSObject {
                 let rawAvailable = !self.photoOutput.availableRawPhotoPixelFormatTypes.isEmpty
                 self.onStateChange?(true, rawAvailable,
                                     rawAvailable
-                                    ? "Camera ready · RAW supported"
-                                    : "Camera ready · RAW not exposed on this configuration")
+                                    ? "Live film preview · RAW capture available"
+                                    : "Live film preview · Processed capture")
             } catch {
                 self.session.commitConfiguration()
                 self.onStateChange?(false, false, error.localizedDescription)
@@ -101,10 +128,25 @@ final class CameraService: NSObject {
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
+}
 
-    enum CameraError: LocalizedError {
-        case noCamera
-        var errorDescription: String? { "No compatible rear camera was found." }
+extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        frameNumber += 1
+        guard frameNumber % 2 == 0,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        autoreleasepool {
+            let source = CIImage(cvPixelBuffer: pixelBuffer)
+            let processed = renderer.applying(currentLook, to: source, grain: grainStrength)
+            guard let cgImage = ciContext.createCGImage(processed, from: processed.extent) else { return }
+            let frame = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
+            DispatchQueue.main.async { [weak self] in
+                self?.onVideoFrame?(frame)
+            }
+        }
     }
 }
 
@@ -133,4 +175,9 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
         case noImageData
         var errorDescription: String? { "The camera returned no image data." }
     }
+}
+
+private enum CameraError: LocalizedError {
+    case noCamera
+    var errorDescription: String? { "No compatible rear camera was found." }
 }
