@@ -110,6 +110,14 @@ final class CameraViewModel: ObservableObject {
         cameraService.setManualExposure(enabled: manualExposure, iso: isoValue, shutterSeconds: shutterSeconds)
     }
 
+    func selectLook(_ look: FilmLook) {
+        guard framesShot == 0 else {
+            statusMessage = "This roll is loaded with \(selectedLook.title). Finish or reload the roll to change stock."
+            return
+        }
+        selectedLook = look
+    }
+
     func setRollLength(_ length: Int) {
         rollLength = length
         framesShot = 0
