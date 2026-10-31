@@ -60,6 +60,10 @@ final class CameraService: NSObject {
                     self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
                     guard self.session.canAddOutput(self.videoOutput) else { throw CameraError.setupFailed }
                     self.session.addOutput(self.videoOutput)
+                    if let connection = self.videoOutput.connection(with: .video),
+                       connection.isVideoOrientationSupported {
+                        connection.videoOrientation = .portrait
+                    }
                     if self.photoOutput.isAppleProRAWSupported {
                         self.photoOutput.isAppleProRAWEnabled = true
                     }
