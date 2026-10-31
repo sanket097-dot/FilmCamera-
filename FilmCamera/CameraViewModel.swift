@@ -99,6 +99,8 @@ final class CameraViewModel: ObservableObject {
         cameraService.configureAndStart()
     }
 
+    func focus(at normalizedPoint: CGPoint) { cameraService.setFocus(normalizedPoint) }
+
     func setExposure(_ value: Float) {
         exposureBias = value
         cameraService.setExposureBias(value)
