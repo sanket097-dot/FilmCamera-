@@ -31,7 +31,7 @@ final class CameraViewModel: ObservableObject {
     @Published var captureRAW = true
     @Published var rawAvailable = false
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
-    @Published var exposureBias: Float = 0
+    @Published var exposureBias: Float = -0.3
     @Published var isCapturing = false
     @Published var latestImage: UIImage?
     @Published var previewImage: UIImage?
@@ -72,6 +72,7 @@ final class CameraViewModel: ObservableObject {
         }
         cameraService.setFilmLook(selectedLook, grain: grainStrength)
         cameraService.configureAndStart()
+        cameraService.setExposureBias(exposureBias)
     }
 
     func setExposure(_ value: Float) {
