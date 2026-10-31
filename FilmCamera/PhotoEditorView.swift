@@ -17,6 +17,10 @@ struct PhotoEditorView: View {
     private let context = CIContext()
 
     private var edited: UIImage {
+        // Avoid allocating another full-resolution Core Image render when the editor
+        // first opens with untouched controls.
+        guard exposure != 0 || contrast != 1 || saturation != 1 ||
+              warmth != 0 || highlights != 0 || shadows != 0 else { return image }
         guard let source = CIImage(image: image) else { return image }
         let exp = CIFilter.exposureAdjust()
         exp.inputImage = source
