@@ -3,32 +3,35 @@ import AVFoundation
 import UIKit
 import CoreImage
 
+struct CameraCapture {
+    let rawData: Data?
+    let processedData: Data?
+}
+
 final class CameraService: NSObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "film.camera.session")
     private let videoQueue = DispatchQueue(label: "film.camera.video", qos: .userInitiated)
-    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: true])
     private let renderer = FilmRenderer()
     private var activeDevice: AVCaptureDevice?
     private var photoDelegate: PhotoCaptureDelegate?
     private var currentLook = FilmLook.portra400
     private var grainStrength: Float = 0.12
     private var frameNumber = 0
+    private var configured = false
 
     var onStateChange: ((Bool, Bool, String) -> Void)?
-    var onCapture: ((Result<Data, Error>) -> Void)?
+    var onCapture: ((Result<CameraCapture, Error>) -> Void)?
     var onVideoFrame: ((UIImage) -> Void)?
 
     func requestAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            return true
-        case .notDetermined:
-            return await AVCaptureDevice.requestAccess(for: .video)
-        default:
-            return false
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
+        default: return false
         }
     }
 
@@ -43,43 +46,52 @@ final class CameraService: NSObject {
         sessionQueue.async {
             guard !self.session.isRunning else { return }
             do {
-                self.session.beginConfiguration()
-                self.session.sessionPreset = .photo
+                if !self.configured {
+                    self.session.beginConfiguration()
+                    self.session.sessionPreset = .photo
+                    guard let device = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                               for: .video,
+                                                               position: .back) else {
+                        throw CameraError.noCamera
+                    }
+                    self.activeDevice = device
+                    let input = try AVCaptureDeviceInput(device: device)
+                    guard self.session.canAddInput(input) else { throw CameraError.setupFailed }
+                    self.session.addInput(input)
 
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera,
-                                                           for: .video,
-                                                           position: .back) else {
-                    throw CameraError.noCamera
-                }
-                self.activeDevice = device
-
-                let input = try AVCaptureDeviceInput(device: device)
-                if self.session.canAddInput(input) { self.session.addInput(input) }
-
-                if self.session.canAddOutput(self.photoOutput) {
+                    guard self.session.canAddOutput(self.photoOutput) else { throw CameraError.setupFailed }
                     self.session.addOutput(self.photoOutput)
-                }
-                if self.session.canAddOutput(self.videoOutput) {
-                    self.videoOutput.videoSettings = [
-                        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-                    ]
-                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
-                    self.session.addOutput(self.videoOutput)
-                    self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
-                    self.videoOutput.connection(with: .video)?.videoOrientation = .portrait
+                    self.photoOutput.maxPhotoQualityPrioritization = .quality
+                    if self.photoOutput.isAppleProRAWSupported {
+                        self.photoOutput.isAppleProRAWEnabled = true
+                    }
+
+                    if self.session.canAddOutput(self.videoOutput) {
+                        self.videoOutput.videoSettings = [
+                            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+                        ]
+                        self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                        self.session.addOutput(self.videoOutput)
+                        self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+                        self.videoOutput.connection(with: .video)?.videoOrientation = .portrait
+                    }
+                    self.session.commitConfiguration()
+                    self.configured = true
                 }
 
-                self.photoOutput.maxPhotoQualityPrioritization = .quality
-                self.session.commitConfiguration()
                 self.session.startRunning()
-
                 let rawAvailable = !self.photoOutput.availableRawPhotoPixelFormatTypes.isEmpty
-                self.onStateChange?(true, rawAvailable,
-                                    rawAvailable
-                                    ? "Live film preview · RAW capture available"
-                                    : "Live film preview · Processed capture")
+                let hasProRAW = self.photoOutput.availableRawPhotoPixelFormatTypes.contains {
+                    AVCapturePhotoOutput.isAppleProRAWPixelFormat($0)
+                }
+                let detail = hasProRAW ? "Apple ProRAW + JPEG ready" :
+                    (rawAvailable ? "Bayer RAW + JPEG ready" : "Processed JPEG capture")
+                self.onStateChange?(true, rawAvailable, "Live film preview · \(detail)")
             } catch {
-                self.session.commitConfiguration()
+                if self.session.isRunning { self.session.stopRunning() }
+                if self.session.isInterrupted == false {
+                    // Configuration errors are reported without leaving the UI in a false-ready state.
+                }
                 self.onStateChange?(false, false, error.localizedDescription)
             }
         }
@@ -96,9 +108,28 @@ final class CameraService: NSObject {
             guard let device = self.activeDevice else { return }
             do {
                 try device.lockForConfiguration()
-                let clamped = max(device.minExposureTargetBias,
-                                  min(device.maxExposureTargetBias, bias))
-                device.setExposureTargetBias(clamped)
+                let value = max(device.minExposureTargetBias, min(device.maxExposureTargetBias, bias))
+                device.setExposureTargetBias(value)
+                device.unlockForConfiguration()
+            } catch { }
+        }
+    }
+
+    func setFocus(_ point: CGPoint) {
+        sessionQueue.async {
+            guard let device = self.activeDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = point
+                    if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = point
+                    if device.isExposureModeSupported(.continuousAutoExposure) {
+                        device.exposureMode = .continuousAutoExposure
+                    }
+                }
                 device.unlockForConfiguration()
             } catch { }
         }
@@ -107,17 +138,16 @@ final class CameraService: NSObject {
     func capture(raw: Bool, flash: AVCaptureDevice.FlashMode) {
         sessionQueue.async {
             let settings: AVCapturePhotoSettings
-
-            if raw,
-               let rawType = self.photoOutput.availableRawPhotoPixelFormatTypes.first {
+            if raw, let rawType = self.photoOutput.availableRawPhotoPixelFormatTypes.first {
+                let processed: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.jpeg]
                 settings = AVCapturePhotoSettings(rawPixelFormatType: rawType,
-                                                  processedFormat: nil)
+                                                   processedFormat: processed)
             } else {
-                settings = AVCapturePhotoSettings()
-                settings.photoQualityPrioritization = .quality
-                if self.photoOutput.supportedFlashModes.contains(flash) {
-                    settings.flashMode = flash
-                }
+                settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            }
+            settings.photoQualityPrioritization = .quality
+            if self.photoOutput.supportedFlashModes.contains(flash) {
+                settings.flashMode = flash
             }
 
             let delegate = PhotoCaptureDelegate { [weak self] result in
@@ -147,35 +177,44 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             let processed = renderer.applying(currentLook, to: source, grain: grainStrength)
             guard let cgImage = ciContext.createCGImage(processed, from: processed.extent) else { return }
             let frame = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
-            DispatchQueue.main.async { [weak self] in
-                self?.onVideoFrame?(frame)
-            }
+            DispatchQueue.main.async { [weak self] in self?.onVideoFrame?(frame) }
         }
     }
 }
 
 private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-    private let completion: (Result<Data, Error>) -> Void
+    private let completion: (Result<CameraCapture, Error>) -> Void
+    private var rawData: Data?
+    private var processedData: Data?
+    private var finished = false
 
-    init(completion: @escaping (Result<Data, Error>) -> Void) {
+    init(completion: @escaping (Result<CameraCapture, Error>) -> Void) {
         self.completion = completion
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
-        if let error {
-            completion(.failure(error))
-            return
-        }
-        guard let data = photo.fileDataRepresentation() else {
-            completion(.failure(CaptureError.noImageData))
-            return
-        }
-        completion(.success(data))
+        if error != nil { return }
+        guard let data = photo.fileDataRepresentation() else { return }
+        if photo.isRawPhoto { rawData = data } else { processedData = data }
     }
 
-    enum CaptureError: LocalizedError {
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
+                     error: Error?) {
+        guard !finished else { return }
+        finished = true
+        if let error {
+            completion(.failure(error))
+        } else if rawData != nil || processedData != nil {
+            completion(.success(CameraCapture(rawData: rawData, processedData: processedData)))
+        } else {
+            completion(.failure(CameraCaptureError.noImageData))
+        }
+    }
+
+    private enum CameraCaptureError: LocalizedError {
         case noImageData
         var errorDescription: String? { "The camera returned no image data." }
     }
@@ -183,5 +222,11 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
 
 private enum CameraError: LocalizedError {
     case noCamera
-    var errorDescription: String? { "No compatible rear camera was found." }
+    case setupFailed
+    var errorDescription: String? {
+        switch self {
+        case .noCamera: return "No compatible rear camera was found."
+        case .setupFailed: return "The camera session could not be configured."
+        }
+    }
 }
