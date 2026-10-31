@@ -4,7 +4,6 @@ import UIKit
 
 struct CameraPreview: View {
     let session: AVCaptureSession
-    let aspectRatio: CGFloat
     let showGrid: Bool
     let onTapFocus: (CGPoint) -> Void
     let focusLocked: Bool
@@ -13,17 +12,13 @@ struct CameraPreview: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let ratio = max(0.45, min(1.0, aspectRatio))
-            let width = min(proxy.size.width, proxy.size.height * ratio)
-            let height = width / ratio
-
             ZStack {
                 Color.black
                 CameraPreviewLayer(session: session, onTap: { devicePoint, screenPoint in
                     onTapFocus(devicePoint)
                     focusPoint = screenPoint
                 })
-                .frame(width: width, height: height)
+                .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay {
                     if showGrid {
