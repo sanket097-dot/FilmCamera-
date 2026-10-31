@@ -31,10 +31,15 @@ struct CameraScreen: View {
                     }
                 }
                 .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture(coordinateSpace: .local) { point in
-                    camera.focus(at: CGPoint(x: max(0, min(1, point.x / max(1, UIScreen.main.bounds.width))),
-                                             y: max(0, min(1, point.y / max(1, UIScreen.main.bounds.height)))))
+                .overlay {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { point in
+                                camera.focus(at: CGPoint(x: max(0, min(1, point.x / max(1, proxy.size.width))),
+                                                         y: max(0, min(1, point.y / max(1, proxy.size.height)))))
+                            }
+                    }
                 }
 
                 lookPicker
@@ -65,6 +70,12 @@ struct CameraScreen: View {
         }
         .sheet(isPresented: $showGalleryImage) {
             galleryViewer
+        }
+        .alert("Film roll finished", isPresented: $camera.showRollFullAlert) {
+            Button("Load new roll") { camera.reloadRoll() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You have used all frames on this roll.")
         }
     }
 
@@ -240,7 +251,7 @@ struct CameraScreen: View {
                         }
                     }
             }
-            .disabled(!camera.cameraReady || camera.isCapturing)
+            .disabled(!camera.cameraReady || camera.isCapturing || camera.rollIsFull)
                 .frame(maxWidth: .infinity)
             }
 
