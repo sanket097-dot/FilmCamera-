@@ -48,6 +48,7 @@ final class CameraViewModel: ObservableObject {
     let cameraService = CameraService()
     private let renderer = FilmRenderer()
     private let previewRenderQueue = DispatchQueue(label: "film.camera.live-render", qos: .userInitiated)
+    private let captureProcessingQueue = DispatchQueue(label: "film.camera.capture-render", qos: .userInitiated)
     private var previewRenderInFlight = false
     private var pendingPreviewFrame: CIImage?
 
@@ -137,37 +138,47 @@ final class CameraViewModel: ObservableObject {
         defer { isCapturing = false }
         do {
             let capture = try result.get()
-            var developed: UIImage?
-            var rawURL: URL?
+            let look = selectedLook
+            let grain = grainStrength
+            let aspectRatio = selectedAspectRatio.portraitValue
 
-            // Preserve the original DNG without decoding it in memory. Developing a
-            // full-resolution Bayer/ProRAW frame on the UI actor can exhaust phone memory.
-            if let rawData = capture.rawData {
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("FilmCamera-\(UUID().uuidString).dng")
-                try rawData.write(to: url, options: .atomic)
-                rawURL = url
+            // Decode, develop and crop away from the main actor. Full-resolution
+            // 12 MP Core Image operations on the UI thread can cause memory spikes
+            // and make the app appear to crash immediately after the shutter fires.
+            let (finalImage, rawURL): (UIImage, URL?) = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<(UIImage, URL?), Error>) in
+                captureProcessingQueue.async {
+                    var rawURL: URL?
+                    do {
+                        if let rawData = capture.rawData {
+                            let url = FileManager.default.temporaryDirectory
+                                .appendingPathComponent("FilmCamera-\\(UUID().uuidString).dng")
+                            try rawData.write(to: url, options: .atomic)
+                            rawURL = url
+                        }
+
+                        guard let processedData = capture.processedData,
+                              let processedImage = UIImage(data: processedData) else {
+                            throw CaptureProcessingError.missingProcessedImage
+                        }
+
+                        let renderer = FilmRenderer()
+                        let developed = try renderer.render(processedImage, look: look, grain: grain)
+                        let cropped = renderer.crop(developed, to: aspectRatio)
+                        continuation.resume(returning: (cropped, rawURL))
+                    } catch {
+                        if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
+                        continuation.resume(throwing: error)
+                    }
+                }
             }
 
-            // Use the camera's processed companion JPEG for the film-developed output.
-            if let processedData = capture.processedData,
-               let processedImage = UIImage(data: processedData) {
-                developed = try renderer.render(processedImage, look: selectedLook, grain: grainStrength)
-            }
-
-            guard let image = developed else {
-                statusMessage = "Capture received, but the processed JPEG could not be developed."
-                if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
-                return
-            }
-
-            let finalImage = renderer.crop(image, to: selectedAspectRatio.portraitValue)
             latestImage = finalImage
             showEditor = true
             await saveToPhotos(finalImage, rawURL: rawURL)
             if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
         } catch {
-            statusMessage = "Capture failed: \(error.localizedDescription)"
+            statusMessage = "Capture failed: \\(error.localizedDescription)"
         }
     }
 
@@ -187,7 +198,12 @@ final class CameraViewModel: ObservableObject {
             return
         }
 
-        guard let jpeg = image.jpegData(compressionQuality: 0.96) else {
+        let jpeg: Data? = await withCheckedContinuation { continuation in
+            captureProcessingQueue.async {
+                continuation.resume(returning: image.jpegData(compressionQuality: 0.96))
+            }
+        }
+        guard let jpeg else {
             statusMessage = "Film render completed, but JPEG export failed."
             return
         }
