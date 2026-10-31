@@ -20,6 +20,8 @@ final class CameraService: NSObject {
     private var photoDelegate: PhotoCaptureDelegate?
     private var currentLook = FilmLook.portra400
     private var grainStrength: Float = 0.12
+    private var bloomStrength: Float = 0.10
+    private var vignetteStrength: Float = 0.18
     private var frameNumber = 0
     private var configured = false
     private var manualExposureEnabled = false
@@ -36,10 +38,12 @@ final class CameraService: NSObject {
         }
     }
 
-    func setFilmLook(_ look: FilmLook, grain: Float) {
+    func setFilmLook(_ look: FilmLook, grain: Float, bloom: Float = 0.10, vignette: Float = 0.18) {
         sessionQueue.async {
             self.currentLook = look
             self.grainStrength = grain
+            self.bloomStrength = bloom
+            self.vignetteStrength = vignette
         }
     }
 
@@ -217,7 +221,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             let source = scale < 1
                 ? fullFrame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
                 : fullFrame
-            let processed = renderer.applying(currentLook, to: source, grain: grainStrength)
+            let processed = renderer.applying(currentLook, to: source, grain: grainStrength, bloom: bloomStrength, vignette: vignetteStrength)
             guard let cgImage = ciContext.createCGImage(processed, from: processed.extent) else { return }
             let frame = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
             DispatchQueue.main.async { [weak self] in self?.onVideoFrame?(frame) }
