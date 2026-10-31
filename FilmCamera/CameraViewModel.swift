@@ -20,6 +20,8 @@ enum ViewfinderAspectRatio: String, CaseIterable, Identifiable {
         case .square: return 1
         }
     }
+    // The camera is held vertically: 4:3 means a portrait 3:4 frame.
+    var portraitValue: CGFloat { value == 1 ? 1 : 1 / value }
 }
 
 @MainActor
@@ -130,7 +132,7 @@ final class CameraViewModel: ObservableObject {
                 return
             }
 
-            let finalImage = renderer.crop(image, to: selectedAspectRatio.value)
+            let finalImage = renderer.crop(image, to: selectedAspectRatio.portraitValue)
             latestImage = finalImage
             showEditor = true
             await saveToPhotos(finalImage, rawURL: rawURL)
