@@ -159,22 +159,41 @@ final class CameraService: NSObject {
 
     func capture(raw: Bool, flash: AVCaptureDevice.FlashMode) {
         sessionQueue.async {
-            let settings: AVCapturePhotoSettings
-            if raw, let rawType = self.photoOutput.availableRawPhotoPixelFormatTypes.first {
-                let processed: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.jpeg]
-                settings = AVCapturePhotoSettings(rawPixelFormatType: rawType,
-                                                   processedFormat: processed)
-            } else {
-                settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            guard self.configured, self.session.isRunning else {
+                self.onCapture?(.failure(CameraError.sessionNotRunning))
+                return
             }
+            guard self.photoDelegate == nil else {
+                self.onCapture?(.failure(CameraError.captureInProgress))
+                return
+            }
+
+            let rawType = raw ? self.photoOutput.availableRawPhotoPixelFormatTypes.first : nil
+            let settings: AVCapturePhotoSettings
+            if let rawType {
+                // Ask AVFoundation for a processed JPEG companion as well as the
+                // original RAW resource. Keep the DNG out of the live rendering path.
+                settings = AVCapturePhotoSettings(
+                    rawPixelFormatType: rawType,
+                    processedFormat: [AVVideoCodecKey: AVVideoCodecType.jpeg]
+                )
+            } else {
+                settings = AVCapturePhotoSettings(
+                    format: [AVVideoCodecKey: AVVideoCodecType.jpeg]
+                )
+            }
+
             settings.photoQualityPrioritization = .quality
             if self.photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
             }
 
             let delegate = PhotoCaptureDelegate { [weak self] result in
-                self?.onCapture?(result)
-                self?.sessionQueue.async { self?.photoDelegate = nil }
+                guard let self else { return }
+                self.onCapture?(result)
+                self.sessionQueue.async { [weak self] in
+                    self?.photoDelegate = nil
+                }
             }
             self.photoDelegate = delegate
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
@@ -234,10 +253,14 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
 private enum CameraError: LocalizedError {
     case noCamera
     case setupFailed
+    case sessionNotRunning
+    case captureInProgress
     var errorDescription: String? {
         switch self {
         case .noCamera: return "No compatible rear camera was found."
         case .setupFailed: return "The camera session could not be configured."
+        case .sessionNotRunning: return "The camera is not ready. Please wait a moment and try again."
+        case .captureInProgress: return "A photo is already being captured."
         }
     }
 }
