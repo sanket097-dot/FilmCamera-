@@ -121,7 +121,7 @@ final class CameraViewModel: ObservableObject {
             // full-resolution Bayer/ProRAW frame on the UI actor can exhaust phone memory.
             if let rawData = capture.rawData {
                 let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("FilmCamera-\\(UUID().uuidString).dng")
+                    .appendingPathComponent("FilmCamera-\(UUID().uuidString).dng")
                 try rawData.write(to: url, options: .atomic)
                 rawURL = url
             }
@@ -174,7 +174,7 @@ final class CameraViewModel: ObservableObject {
                 // Save the developed film JPEG as a normal photo asset.
                 let jpegRequest = PHAssetCreationRequest.forAsset()
                 let jpegOptions = PHAssetResourceCreationOptions()
-                jpegOptions.originalFilename = "FilmCamera-\\(self.selectedLook.id).jpg"
+                jpegOptions.originalFilename = "FilmCamera-\(self.selectedLook.id).jpg"
                 jpegOptions.uniformTypeIdentifier = UTType.jpeg.identifier
                 jpegRequest.addResource(with: .photo, data: jpeg, options: jpegOptions)
 
