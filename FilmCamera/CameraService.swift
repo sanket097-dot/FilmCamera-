@@ -121,7 +121,7 @@ final class CameraService: NSObject {
             do {
                 try device.lockForConfiguration()
                 if device.isFocusPointOfInterestSupported {
-                    device.focusPointOfInterest = CGPoint(x: point.x, y: 1 - point.y)
+                    device.focusPointOfInterest = CGPoint(x: point.y, y: 1 - point.x)
                     if device.isFocusModeSupported(.autoFocus) { device.focusMode = .autoFocus }
                 }
                 if device.isExposurePointOfInterestSupported {
