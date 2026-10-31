@@ -143,7 +143,16 @@ final class FilmRenderer {
     }
 
     func crop(_ image: UIImage, to aspectRatio: CGFloat) -> UIImage {
-        guard let source = CIImage(image: image), aspectRatio > 0 else { return image }
+        guard aspectRatio > 0 else { return image }
+        // Normalize UIImage orientation before calculating the crop. Camera JPEGs commonly
+        // store portrait orientation as metadata while their underlying pixels remain landscape.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let normalized = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        guard let source = CIImage(image: normalized) else { return image }
         let extent = source.extent
         let currentRatio = extent.width / extent.height
         let cropRect: CGRect
