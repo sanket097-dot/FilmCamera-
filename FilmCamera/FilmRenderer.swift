@@ -7,21 +7,21 @@ final class FilmRenderer {
     private var cubeCache: [String: Data] = [:]
     private let cacheLock = NSLock()
 
-    func render(_ image: UIImage, look: FilmLook, grain: Float? = nil) throws -> UIImage {
+    func render(_ image: UIImage, look: FilmLook, grain: Float? = nil, bloom: Float = 0.10, vignette: Float = 0.18) throws -> UIImage {
         guard let source = CIImage(image: image) else { throw RenderError.invalidImage }
-        return try render(source, look: look, grain: grain ?? look.grain, orientation: image.imageOrientation)
+        return try render(source, look: look, grain: grain ?? look.grain, bloom: bloom, vignette: vignette, orientation: image.imageOrientation)
     }
 
-    func render(_ source: CIImage, look: FilmLook, grain: Float? = nil,
+    func render(_ source: CIImage, look: FilmLook, grain: Float? = nil, bloom: Float = 0.10, vignette: Float = 0.18,
                 orientation: UIImage.Orientation = .up) throws -> UIImage {
-        let output = applying(look, to: source, grain: grain ?? look.grain)
+        let output = applying(look, to: source, grain: grain ?? look.grain, bloom: bloom, vignette: vignette)
         guard let cgImage = context.createCGImage(output, from: output.extent) else {
             throw RenderError.renderFailed
         }
         return UIImage(cgImage: cgImage, scale: 1, orientation: orientation)
     }
 
-    func applying(_ look: FilmLook, to source: CIImage, grain: Float) -> CIImage {
+    func applying(_ look: FilmLook, to source: CIImage, grain: Float, bloom bloomStrength: Float = 0.10, vignette vignetteStrength: Float = 0.18) -> CIImage {
         let extent = source.extent
         var image = source
 
@@ -51,7 +51,7 @@ final class FilmRenderer {
         }
 
         // Gentle highlight bloom and a warm red halation approximation for tungsten stocks.
-        let bloomAmount: Float = look.id == "tungsten800" ? 0.20 : 0.08
+        let bloomAmount = max(0, min(0.8, bloomStrength)) * (look.id == "tungsten800" ? 1.45 : 1.0)
         let bloom = CIFilter.bloom()
         bloom.inputImage = image
         bloom.radius = 7
@@ -78,7 +78,7 @@ final class FilmRenderer {
 
         let vignette = CIFilter.vignette()
         vignette.inputImage = image
-        vignette.intensity = 0.18
+        vignette.intensity = max(0, min(1, vignetteStrength))
         vignette.radius = Float(max(extent.width, extent.height) * 0.72)
         image = vignette.outputImage?.cropped(to: extent) ?? image
         return image.cropped(to: extent)
