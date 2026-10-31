@@ -139,7 +139,11 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         autoreleasepool {
-            let source = CIImage(cvPixelBuffer: pixelBuffer)
+            let fullFrame = CIImage(cvPixelBuffer: pixelBuffer)
+            let scale = min(1.0, 1280.0 / max(fullFrame.extent.width, fullFrame.extent.height))
+            let source = scale < 1
+                ? fullFrame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                : fullFrame
             let processed = renderer.applying(currentLook, to: source, grain: grainStrength)
             guard let cgImage = ciContext.createCGImage(processed, from: processed.extent) else { return }
             let frame = UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
