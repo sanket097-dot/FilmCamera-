@@ -11,11 +11,13 @@ struct CameraScreen: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // GeometryReader remains within the safe area. Insets are not added
-            // a second time, which previously shifted the whole interface off-screen.
-            let usableHeight = geometry.size.height
-            let reservedHeight: CGFloat = 52 + 8 + 60 + 30 + 106 + 8 + 88 + 16 + 24
-            let previewHeight = max(180, min(usableHeight - reservedHeight, geometry.size.width * 1.12))
+            // The root geometry reader covers the physical display. Safe areas are
+            // applied exactly once as content insets; the preview takes every point left.
+            let topInset = geometry.safeAreaInsets.top
+            let bottomInset = geometry.safeAreaInsets.bottom
+            let contentHeight = max(0, geometry.size.height - topInset - bottomInset)
+            let fixedHeight: CGFloat = 52 + 6 + 4 + 58 + 2 + 28 + 4 + 100 + 92 + 19
+            let previewHeight = max(180, contentHeight - fixedHeight)
 
             VStack(spacing: 0) {
                 header
@@ -33,27 +35,27 @@ struct CameraScreen: View {
                 .frame(height: previewHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(.horizontal, 10)
-                .padding(.top, 8)
+                .padding(.top, 6)
 
                 cameraToolbar
                     .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .frame(height: 60)
+                    .padding(.top, 4)
+                    .frame(height: 58)
 
                 exposureControl
                     .padding(.horizontal, 20)
                     .padding(.top, 2)
-                    .frame(height: 30)
+                    .frame(height: 28)
 
                 filmPicker
-                    .padding(.top, 6)
-                    .frame(height: 106)
+                    .padding(.top, 4)
+                    .frame(height: 100)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 0)
 
                 shutterDock
                     .padding(.horizontal, 22)
-                    .frame(height: 88)
+                    .frame(height: 92)
 
                 Text(camera.statusMessage)
                     .font(.system(size: 9, weight: .medium))
@@ -64,8 +66,8 @@ struct CameraScreen: View {
                     .frame(height: 17)
                     .padding(.top, 2)
             }
-            .padding(.top, 8)
-            .padding(.bottom, 8)
+            .padding(.top, topInset + 4)
+            .padding(.bottom, bottomInset + 4)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .background(Color.black)
             .overlay {
@@ -74,6 +76,7 @@ struct CameraScreen: View {
                 }
             }
         }
+        .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await camera.start() }
