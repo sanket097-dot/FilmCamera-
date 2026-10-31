@@ -95,7 +95,7 @@ final class CameraViewModel: ObservableObject {
             statusMessage = "Camera access is required. Enable it in Settings."
             return
         }
-        cameraService.setFilmLook(selectedLook, grain: grainStrength)
+        cameraService.setFilmLook(selectedLook, grain: grainStrength, bloom: bloomStrength, vignette: vignetteStrength)
         cameraService.configureAndStart()
     }
 
