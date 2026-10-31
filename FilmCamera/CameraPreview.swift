@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct CameraPreview: View {
     let session: AVCaptureSession
@@ -67,6 +68,9 @@ private struct CameraPreviewLayer: UIViewRepresentable {
         let view = PreviewHostView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        if let connection = view.previewLayer.connection, connection.isVideoOrientationSupported {
+            connection.videoOrientation = .portrait
+        }
         view.onTap = { location in
             let point = view.previewLayer.captureDevicePointConverted(fromLayerPoint: location)
             let normalized = CGPoint(
