@@ -78,7 +78,10 @@ final class CameraViewModel: ObservableObject {
         cameraService.setExposureBias(value)
     }
 
-    func setFocusPoint(_ point: CGPoint) { cameraService.setFocusAndExposure(point: point) }
+    func setFocusPoint(_ point: CGPoint) {
+        guard !focusLocked else { return }
+        cameraService.setFocusAndExposure(point: point)
+    }
 
     func toggleFocusLock() {
         focusLocked.toggle()
