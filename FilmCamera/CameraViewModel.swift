@@ -3,13 +3,14 @@ import SwiftUI
 import AVFoundation
 import Photos
 import UIKit
+import CoreImage
+import UniformTypeIdentifiers
 
 enum ViewfinderAspectRatio: String, CaseIterable, Identifiable {
     case ratio4x3 = "4:3"
     case ratio3x2 = "3:2"
     case ratio16x9 = "16:9"
     case square = "1:1"
-
     var id: String { rawValue }
     var value: CGFloat {
         switch self {
@@ -26,10 +27,8 @@ final class CameraViewModel: ObservableObject {
     @Published var authorizationGranted = false
     @Published var cameraReady = false
     @Published var statusMessage = "Preparing camera…"
-    @Published var selectedLook: FilmLook = .portra400 {
-        didSet { updatePreviewLook() }
-    }
-    @Published var captureRAW = false
+    @Published var selectedLook: FilmLook = .portra400 { didSet { updatePreviewLook() } }
+    @Published var captureRAW = true
     @Published var rawAvailable = false
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
     @Published var exposureBias: Float = 0
@@ -37,9 +36,7 @@ final class CameraViewModel: ObservableObject {
     @Published var latestImage: UIImage?
     @Published var previewImage: UIImage?
     @Published var showSettings = false
-    @Published var grainStrength: Float = 0.12 {
-        didSet { updatePreviewLook() }
-    }
+    @Published var grainStrength: Float = 0.12 { didSet { updatePreviewLook() } }
     @Published var selectedAspectRatio: ViewfinderAspectRatio = .ratio4x3
     @Published var showGrid = false
 
@@ -51,7 +48,7 @@ final class CameraViewModel: ObservableObject {
             Task { @MainActor in
                 self?.cameraReady = ready
                 self?.rawAvailable = raw
-                if !raw { self?.captureRAW = false }
+                self?.captureRAW = raw
                 self?.statusMessage = message
             }
         }
@@ -59,9 +56,7 @@ final class CameraViewModel: ObservableObject {
             Task { @MainActor in self?.previewImage = image }
         }
         cameraService.onCapture = { [weak self] result in
-            Task { @MainActor in
-                await self?.processCapture(result)
-            }
+            Task { @MainActor in await self?.processCapture(result) }
         }
     }
 
@@ -84,33 +79,51 @@ final class CameraViewModel: ObservableObject {
     func capture() {
         guard cameraReady, !isCapturing else { return }
         isCapturing = true
-        cameraService.capture(raw: captureRAW, flash: flashMode)
+        cameraService.capture(raw: captureRAW && rawAvailable, flash: flashMode)
     }
 
     private func updatePreviewLook() {
         cameraService.setFilmLook(selectedLook, grain: grainStrength)
     }
 
-    private func processCapture(_ result: Result<Data, Error>) async {
+    private func processCapture(_ result: Result<CameraCapture, Error>) async {
         defer { isCapturing = false }
         do {
-            let data = try result.get()
-            guard let source = UIImage(data: data) else {
-                statusMessage = captureRAW
-                    ? "RAW file captured, but this version cannot develop the DNG yet. Turn RAW off to save a film-rendered photo."
-                    : "Could not decode captured image."
+            let capture = try result.get()
+            var developed: UIImage?
+            var rawURL: URL?
+
+            if let rawData = capture.rawData {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("FilmCamera-\(UUID().uuidString).dng")
+                try rawData.write(to: url, options: .atomic)
+                rawURL = url
+                if let rawFilter = CIRAWFilter(imageURL: url), let rawImage = rawFilter.outputImage {
+                    developed = try? renderer.render(rawImage, look: selectedLook, grain: grainStrength)
+                }
+            }
+
+            if developed == nil, let processedData = capture.processedData,
+               let processedImage = UIImage(data: processedData) {
+                developed = try renderer.render(processedImage, look: selectedLook, grain: grainStrength)
+            }
+
+            guard let image = developed else {
+                statusMessage = "Capture received, but the RAW decoder could not develop this file. Original RAW is retained temporarily."
+                if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
                 return
             }
-            let rendered = try renderer.render(source, look: selectedLook, grain: grainStrength)
-            let finalImage = renderer.crop(rendered, to: selectedAspectRatio.value)
+
+            let finalImage = renderer.crop(image, to: selectedAspectRatio.value)
             latestImage = finalImage
-            await saveToPhotos(finalImage)
+            await saveToPhotos(finalImage, rawURL: rawURL)
+            if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
         } catch {
             statusMessage = "Capture failed: \(error.localizedDescription)"
         }
     }
 
-    private func saveToPhotos(_ image: UIImage) async {
+    private func saveToPhotos(_ image: UIImage, rawURL: URL?) async {
         let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
         let allowed: Bool
         if status == .authorized || status == .limited {
@@ -121,17 +134,34 @@ final class CameraViewModel: ObservableObject {
         } else {
             allowed = false
         }
-
         guard allowed else {
-            statusMessage = "Photo captured. Allow Photos access to save it."
+            statusMessage = "Photo developed. Allow Photos access to save it."
+            return
+        }
+
+        guard let jpeg = image.jpegData(compressionQuality: 0.96) else {
+            statusMessage = "Film render completed, but JPEG export failed."
             return
         }
 
         do {
             try await PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
+                if let rawURL {
+                    let request = PHAssetCreationRequest.forAsset()
+                    let rawOptions = PHAssetResourceCreationOptions()
+                    rawOptions.originalFilename = "FilmCamera-Original.dng"
+                    request.addResource(with: .photo, fileURL: rawURL, options: rawOptions)
+                    let jpegOptions = PHAssetResourceCreationOptions()
+                    jpegOptions.originalFilename = "FilmCamera-\(self.selectedLook.id).jpg"
+                    jpegOptions.uniformTypeIdentifier = UTType.jpeg.identifier
+                    request.addResource(with: .alternatePhoto, data: jpeg, options: jpegOptions)
+                } else {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
             }
-            statusMessage = "Saved with \(selectedLook.title)."
+            statusMessage = rawURL == nil
+                ? "Saved \(selectedLook.title) JPEG."
+                : "Saved developed \(selectedLook.title) + original RAW."
         } catch {
             statusMessage = "Image rendered, but saving failed: \(error.localizedDescription)"
         }
