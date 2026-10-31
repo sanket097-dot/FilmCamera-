@@ -3,7 +3,12 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 final class FilmRenderer {
-    private let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: true])
+    private let context = CIContext(options: [
+        .useSoftwareRenderer: false,
+        .cacheIntermediates: false,
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+        .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
+    ])
     private var cubeCache: [String: Data] = [:]
     private let cacheLock = NSLock()
 
@@ -19,6 +24,19 @@ final class FilmRenderer {
             throw RenderError.renderFailed
         }
         return UIImage(cgImage: cgImage, scale: 1, orientation: orientation)
+    }
+
+    // A lighter live-view render: colour LUT, fade and subtle vignette at preview resolution.
+    // Capture processing remains independent and uses the full-resolution still.
+    func renderPreview(_ source: CIImage, look: FilmLook) -> UIImage? {
+        let maxDimension: CGFloat = 720
+        let scale = min(1, maxDimension / max(source.extent.width, source.extent.height))
+        let previewSource = scale < 1
+            ? source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            : source
+        let output = applying(look, to: previewSource, grain: 0)
+        guard let cgImage = context.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 
     func applying(_ look: FilmLook, to source: CIImage, grain: Float) -> CIImage {
@@ -51,10 +69,10 @@ final class FilmRenderer {
         }
 
         // Gentle highlight bloom and a warm red halation approximation for tungsten stocks.
-        let bloomAmount: Float = look.id == "tungsten800" ? 0.20 : 0.08
+        let bloomAmount: Float = look.id == "tungsten800" ? 0.035 : 0.015
         let bloom = CIFilter.bloom()
         bloom.inputImage = image
-        bloom.radius = 7
+        bloom.radius = 4
         bloom.intensity = bloomAmount
         image = bloom.outputImage?.cropped(to: extent) ?? image
 
@@ -104,13 +122,15 @@ final class FilmRenderer {
                     var g = Float(green) / Float(dimension - 1)
                     var b = Float(blue) / Float(dimension - 1)
 
-                    // Film-like toe and shoulder, preserving highlight detail more gently than a basic contrast slider.
-                    func curve(_ x: Float) -> Float {
-                        let centered = (x - 0.5) * contrast + 0.5 + brightness
-                        let toe = centered / (max(0.0001, centered + 0.055))
-                        let normalizedToe = toe / 1.052
-                        let shoulder = normalizedToe / (1 + max(0, normalizedToe - 0.72) * 0.30)
-                        return min(1, max(0, shoulder))
+                    // Restrained filmic toe/shoulder. The previous rational toe
+                    // divided every midtone by (x + 0.055), lifting 0.30 to ~0.80
+                    // and producing the washed-out live preview.
+                    func curve(_ value: Float) -> Float {
+                        let x = min(1, max(0, (value - 0.5) * contrast + 0.5 + brightness))
+                        let toeLift = 0.012 * exp(-x * 8)
+                        let shoulderStart = max(0, (x - 0.78) / 0.22)
+                        let shoulderRollOff = 0.025 * shoulderStart * shoulderStart
+                        return min(1, max(0, x + toeLift - shoulderRollOff))
                     }
                     r = curve(r); g = curve(g); b = curve(b)
                     let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -143,7 +163,16 @@ final class FilmRenderer {
     }
 
     func crop(_ image: UIImage, to aspectRatio: CGFloat) -> UIImage {
-        guard let source = CIImage(image: image), aspectRatio > 0 else { return image }
+        guard aspectRatio > 0 else { return image }
+        // Normalize UIImage orientation before calculating the crop. Camera JPEGs commonly
+        // store portrait orientation as metadata while their underlying pixels remain landscape.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let normalized = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        guard let source = CIImage(image: normalized) else { return image }
         let extent = source.extent
         let currentRatio = extent.width / extent.height
         let cropRect: CGRect
