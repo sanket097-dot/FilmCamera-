@@ -39,6 +39,8 @@ final class CameraViewModel: ObservableObject {
     @Published var grainStrength: Float = 0.12 { didSet { updatePreviewLook() } }
     @Published var selectedAspectRatio: ViewfinderAspectRatio = .ratio4x3
     @Published var showGrid = false
+    @Published var focusLocked = false
+    @Published var manualFocus: Float = 0.5
 
     let cameraService = CameraService()
     private let renderer = FilmRenderer()
@@ -74,6 +76,18 @@ final class CameraViewModel: ObservableObject {
     func setExposure(_ value: Float) {
         exposureBias = value
         cameraService.setExposureBias(value)
+    }
+
+    func setFocusPoint(_ point: CGPoint) { cameraService.setFocusAndExposure(point: point) }
+
+    func toggleFocusLock() {
+        focusLocked.toggle()
+        cameraService.setFocusLocked(focusLocked)
+    }
+
+    func setManualFocus(_ value: Float) {
+        manualFocus = value
+        cameraService.setManualFocus(value)
     }
 
     func capture() {
