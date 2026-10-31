@@ -5,32 +5,76 @@ struct CameraPreview: View {
     let image: UIImage?
     let aspectRatio: CGFloat
     let showGrid: Bool
+    let onTapFocus: (CGPoint) -> Void
+    let focusLocked: Bool
+
+    @State private var focusPoint: CGPoint?
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { proxy in
+            let available = proxy.size
+            let ratio = max(0.5, min(2.4, aspectRatio))
+            let width = min(available.width, available.height * ratio)
+            let height = width / ratio
+
             ZStack {
                 Color.black
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
-                } else {
-                    ProgressView().tint(.white)
-                }
+                ZStack {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: width, height: height)
+                            .clipped()
+                    } else {
+                        ProgressView().tint(.white)
+                            .frame(width: width, height: height)
+                    }
 
-                if showGrid {
-                    ViewfinderGrid()
-                        .stroke(.white.opacity(0.55), lineWidth: 0.6)
-                        .padding(.horizontal, geometry.size.width * 0.02)
-                        .padding(.vertical, geometry.size.height * 0.02)
-                        .allowsHitTesting(false)
+                    if showGrid {
+                        ViewfinderGrid()
+                            .stroke(.white.opacity(0.58), lineWidth: 0.6)
+                            .frame(width: width, height: height)
+                            .allowsHitTesting(false)
+                    }
+
+                    if let point = focusPoint {
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(focusLocked ? .yellow : .white, lineWidth: 1.5)
+                            .frame(width: 62, height: 62)
+                            .position(point)
+                            .allowsHitTesting(false)
+                    }
+
+                    VStack {
+                        HStack {
+                            Spacer()
+                            if focusLocked {
+                                Label("AE/AF LOCK", systemImage: "lock.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .tracking(0.8)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 6)
+                                    .background(.black.opacity(0.55), in: Capsule())
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(12)
+                    .frame(width: width, height: height)
+                    .allowsHitTesting(false)
                 }
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .contentShape(Rectangle())
+                .onTapGesture { location in
+                    focusPoint = location
+                    onTapFocus(CGPoint(x: location.x / width, y: location.y / height))
+                }
+                .frame(width: width, height: height)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .aspectRatio(aspectRatio, contentMode: .fit)
         .background(.black)
     }
 }
