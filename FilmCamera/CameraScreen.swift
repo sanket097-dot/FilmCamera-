@@ -7,20 +7,19 @@ struct CameraScreen: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var galleryImage: UIImage?
     @State private var showGalleryImage = false
+    @State private var showExposure = false
 
     var body: some View {
         GeometryReader { geometry in
-            // Reserve space for every control first. The viewfinder gets the
-            // remaining height, so the shutter can never fall below the screen.
-            let reserved: CGFloat = 350
-            let previewHeight = max(230, min(geometry.size.width * 1.12,
-                                             geometry.size.height - reserved))
+            let topInset = geometry.safeAreaInsets.top
+            let bottomInset = geometry.safeAreaInsets.bottom
+            let usableHeight = max(560, geometry.size.height - topInset - bottomInset)
+            let previewHeight = min(usableHeight * 0.46, geometry.size.width * 1.08)
 
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, 20)
-                    .padding(.top, 3)
-                    .padding(.bottom, 8)
+                    .frame(height: 48)
 
                 CameraPreview(
                     session: camera.cameraService.session,
@@ -30,37 +29,50 @@ struct CameraScreen: View {
                 )
                 .frame(maxWidth: .infinity)
                 .frame(height: previewHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .padding(.horizontal, 12)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
 
                 cameraToolbar
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 12)
                     .padding(.top, 8)
+                    .frame(height: 56)
 
                 exposureControl
                     .padding(.horizontal, 20)
-                    .padding(.top, 3)
+                    .padding(.top, 2)
+                    .frame(height: 30)
 
                 filmPicker
                     .padding(.top, 7)
 
+                Spacer(minLength: 4)
+
                 shutterDock
-                    .padding(.horizontal, 20)
-                    .padding(.top, 3)
-                    .padding(.bottom, 1)
+                    .padding(.horizontal, 22)
+                    .frame(height: 82)
 
                 Text(camera.statusMessage)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white.opacity(0.48))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.75)
                     .padding(.horizontal, 20)
+                    .frame(height: 17)
                     .padding(.top, 2)
             }
+            .padding(.top, topInset + 5)
+            .padding(.bottom, bottomInset + 4)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .background(Color.black)
+            .overlay {
+                if !camera.authorizationGranted && !camera.cameraReady {
+                    permissionView
+                }
+            }
         }
-        .background(Color.black.ignoresSafeArea())
+        .ignoresSafeArea()
+        .background(Color.black)
         .preferredColorScheme(.dark)
         .task { await camera.start() }
         .onChange(of: selectedPhoto) { _, item in
@@ -82,14 +94,17 @@ struct CameraScreen: View {
                 PhotoEditorView(image: image)
             }
         }
+        .sheet(isPresented: $showExposure) {
+            exposureSheet.presentationDetents([.height(190)])
+        }
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("FILM CAMERA")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .tracking(2.1)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .tracking(2)
                 Text("A slower way to see")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.48))
@@ -110,8 +125,8 @@ struct CameraScreen: View {
     private func headerIcon(_ name: String) -> some View {
         Image(systemName: name)
             .font(.system(size: 17, weight: .medium))
-            .frame(width: 42, height: 42)
-            .background(.white.opacity(0.09), in: Circle())
+            .frame(width: 40, height: 40)
+            .background(.white.opacity(0.10), in: Circle())
     }
 
     private var permissionView: some View {
@@ -125,7 +140,7 @@ struct CameraScreen: View {
         }
         .foregroundStyle(.white)
         .padding(24)
-        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
+        .background(.black.opacity(0.92), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var cameraToolbar: some View {
@@ -166,100 +181,138 @@ struct CameraScreen: View {
                             active: camera.focusLocked)
             }
             .frame(maxWidth: .infinity)
+
+            Button { showExposure = true } label: {
+                toolbarItem("sun.max", title: String(format: "%+.1f", camera.exposureBias), active: true)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel("Adjust exposure")
         }
         .buttonStyle(.plain)
     }
 
     private func toolbarItem(_ symbol: String, title: String, active: Bool) -> some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 4) {
             Image(systemName: symbol)
-                .font(.system(size: 18, weight: .regular))
-                .frame(height: 22)
+                .font(.system(size: 17, weight: .regular))
+                .frame(height: 21)
             Text(title)
                 .font(.system(size: 8, weight: .bold))
-                .tracking(0.8)
+                .tracking(0.6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        .foregroundStyle(active ? .white : .white.opacity(0.55))
+        .foregroundStyle(active ? .white : .white.opacity(0.52))
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
 
     private var exposureControl: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "sun.max")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.72))
+        HStack(spacing: 8) {
+            Image(systemName: "sun.max.fill")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.65))
+            Text("EXPOSURE")
+                .font(.system(size: 8, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.65))
+            Spacer()
+            Text(String(format: "%+.1f EV", camera.exposureBias))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white)
+            Button("Reset") { camera.setExposure(0) }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+        }
+    }
+
+    private var exposureSheet: some View {
+        VStack(spacing: 18) {
+            HStack {
+                Text("Exposure compensation")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Text(String(format: "%+.1f EV", camera.exposureBias))
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Slider(value: Binding(
                 get: { Double(camera.exposureBias) },
                 set: { camera.setExposure(Float($0)) }
             ), in: -2...2, step: 0.1)
-            Text(String(format: "%+.1f", camera.exposureBias))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white)
-                .frame(width: 39, alignment: .trailing)
+            HStack {
+                Text("−2 EV").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset") { camera.setExposure(0) }
+                Spacer()
+                Text("+2 EV").font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .frame(height: 26)
-        .accessibilityLabel("Exposure compensation")
+        .padding(22)
+        .padding(.top, 8)
+        .background(Color(uiColor: .secondarySystemBackground))
+        .preferredColorScheme(.dark)
     }
 
     private var filmPicker: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("FILM")
+                Text("FILM STOCK")
                     .font(.system(size: 10, weight: .bold))
-                    .tracking(1.7)
+                    .tracking(1.6)
                 Spacer()
                 Text(camera.selectedLook.title)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.76))
+                    .foregroundStyle(.white.opacity(0.78))
             }
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.white.opacity(0.92))
             .padding(.horizontal, 20)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                LazyHStack(spacing: 10) {
                     ForEach(FilmLook.all) { look in
                         Button { camera.selectedLook = look } label: {
                             VStack(spacing: 4) {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
                                     .fill(swatch(for: look))
-                                    .frame(width: 70, height: 43)
+                                    .frame(width: 72, height: 42)
                                     .overlay {
                                         Image(systemName: look.monochrome ? "circle.lefthalf.filled" : "camera.filters")
                                             .font(.system(size: 15, weight: .light))
-                                            .foregroundStyle(.white.opacity(0.86))
+                                            .foregroundStyle(.white.opacity(0.88))
                                     }
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(camera.selectedLook.id == look.id ? .white : .white.opacity(0.12),
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .stroke(camera.selectedLook.id == look.id ? .white : .white.opacity(0.15),
                                                     lineWidth: camera.selectedLook.id == look.id ? 2 : 1)
                                     }
                                 Text(look.title)
                                     .font(.system(size: 8, weight: camera.selectedLook.id == look.id ? .bold : .regular))
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
+                                    .minimumScaleFactor(0.7)
                                     .foregroundStyle(.white.opacity(camera.selectedLook.id == look.id ? 1 : 0.58))
                             }
-                            .frame(width: 74)
+                            .frame(width: 76)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Select \(look.title) film stock")
                     }
                 }
                 .padding(.horizontal, 18)
-                .padding(.vertical, 2)
+                .padding(.vertical, 3)
             }
-            .frame(height: 63)
+            .frame(height: 62)
         }
     }
 
     private var shutterDock: some View {
-        HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .center) {
             PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
                 Image(systemName: "photo.on.rectangle")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(.white)
-                    .frame(width: 54, height: 62)
+                    .frame(width: 58, height: 66)
                     .contentShape(Rectangle())
             }
             .frame(maxWidth: .infinity)
@@ -267,22 +320,18 @@ struct CameraScreen: View {
 
             Button { camera.capture() } label: {
                 ZStack {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 68, height: 68)
-                    Circle()
-                        .stroke(Color.black.opacity(0.18), lineWidth: 2)
-                        .frame(width: 58, height: 58)
+                    Circle().fill(.white).frame(width: 72, height: 72)
+                    Circle().stroke(.black.opacity(0.16), lineWidth: 2).frame(width: 62, height: 62)
                     if camera.isCapturing {
                         ProgressView().tint(.black)
                     }
                 }
-                .frame(width: 76, height: 76)
+                .frame(width: 82, height: 78)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(!camera.cameraReady || camera.isCapturing)
-            .opacity(camera.cameraReady ? 1 : 0.48)
+            .opacity(camera.cameraReady ? 1 : 0.45)
             .frame(maxWidth: .infinity)
             .accessibilityLabel("Take photo")
 
@@ -295,7 +344,7 @@ struct CameraScreen: View {
                         .tracking(0.6)
                 }
                 .foregroundStyle(.white)
-                .frame(width: 56, height: 42)
+                .frame(width: 58, height: 42)
                 .background(.white.opacity(0.12), in: Capsule())
             }
             .disabled(!camera.rawAvailable)
@@ -303,7 +352,7 @@ struct CameraScreen: View {
             .frame(maxWidth: .infinity)
             .accessibilityLabel("Capture format")
         }
-        .frame(height: 76)
+        .frame(height: 82)
     }
 
     private var settingsSheet: some View {
@@ -327,22 +376,19 @@ struct CameraScreen: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-
                 Section("Capture") {
                     Toggle("RAW + developed JPEG", isOn: $camera.captureRAW)
                         .disabled(!camera.rawAvailable)
                     Text(camera.rawAvailable
-                         ? "The camera stores the original RAW and a developed film JPEG. The viewfinder uses Apple's normal camera preview."
+                         ? "The original RAW and developed film JPEG are saved together."
                          : "RAW is not available from the current camera configuration.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
                 Section("Camera behavior") {
                     LabeledContent("Live preview", value: "Natural iPhone camera feed")
                     LabeledContent("Film look", value: "Applied after capture")
-                    LabeledContent("Exposure compensation", value: "Live sensor control")
-                    Text("The live preview uses AVCaptureVideoPreviewLayer so it shows the normal ISP-processed camera image rather than a flat RAW decode.")
+                    Text("Tap the viewfinder to set focus and metering. Use the sun control for exposure compensation.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
