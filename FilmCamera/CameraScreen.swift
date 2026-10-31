@@ -66,8 +66,8 @@ struct CameraScreen: View {
                     .frame(height: 17)
                     .padding(.top, 2)
             }
-            .padding(.top, topInset + 4)
-            .padding(.bottom, bottomInset + 4)
+             .padding(.top, topInset)
+            .padding(.bottom, bottomInset)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
             .background(Color.black)
             .overlay {
