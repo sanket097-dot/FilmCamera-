@@ -11,7 +11,6 @@ final class CameraService: NSObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
     private let sessionQueue = DispatchQueue(label: "film.camera.session")
-    private let ciContext = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: true])
     private var activeDevice: AVCaptureDevice?
     private var photoDelegate: PhotoCaptureDelegate?
     private var configured = false
