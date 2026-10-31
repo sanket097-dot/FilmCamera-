@@ -47,6 +47,7 @@ final class CameraViewModel: ObservableObject {
 
     let cameraService = CameraService()
     private let renderer = FilmRenderer()
+    private let previewRenderQueue = DispatchQueue(label: "film.camera.live-render", qos: .userInitiated)
 
     init() {
         cameraService.onStateChange = { [weak self] ready, raw, message in
@@ -59,6 +60,16 @@ final class CameraViewModel: ObservableObject {
         }
         cameraService.onCapture = { [weak self] result in
             Task { @MainActor in await self?.processCapture(result) }
+        }
+        cameraService.onPreviewFrame = { [weak self] frame in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let look = self.selectedLook
+                self.previewRenderQueue.async { [weak self] in
+                    guard let self, let image = self.renderer.renderPreview(frame, look: look) else { return }
+                    DispatchQueue.main.async { [weak self] in self?.previewImage = image }
+                }
+            }
         }
     }
 
@@ -106,23 +117,16 @@ final class CameraViewModel: ObservableObject {
             var developed: UIImage?
             var rawURL: URL?
 
-            if let rawData = capture.rawData {
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("FilmCamera-\(UUID().uuidString).dng")
-                try rawData.write(to: url, options: .atomic)
-                rawURL = url
-                if let rawFilter = CIRAWFilter(imageURL: url), let rawImage = rawFilter.outputImage {
-                    developed = try? renderer.render(rawImage, look: selectedLook, grain: grainStrength)
-                }
-            }
-
-            if developed == nil, let processedData = capture.processedData,
+            // Develop the camera's processed companion JPEG. Decoding a full-resolution
+            // Bayer/ProRAW frame synchronously on the UI actor can exhaust memory on phones.
+            // Keep the original DNG intact and save it as a separate Photos asset below.
+            if let processedData = capture.processedData,
                let processedImage = UIImage(data: processedData) {
                 developed = try renderer.render(processedImage, look: selectedLook, grain: grainStrength)
             }
 
             guard let image = developed else {
-                statusMessage = "Capture received, but the RAW decoder could not develop this file. Original RAW is retained temporarily."
+                statusMessage = "Capture received, but the processed JPEG could not be developed."
                 if let rawURL { try? FileManager.default.removeItem(at: rawURL) }
                 return
             }
@@ -160,22 +164,22 @@ final class CameraViewModel: ObservableObject {
 
         do {
             try await PHPhotoLibrary.shared().performChanges {
+                // Save the developed film JPEG as a normal photo.
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+
+                // Save the untouched DNG as its own RAW asset. Keeping the two assets
+                // separate avoids fragile RAW/JPEG alternate-resource pairing.
                 if let rawURL {
-                    let request = PHAssetCreationRequest.forAsset()
-                    let rawOptions = PHAssetResourceCreationOptions()
-                    rawOptions.originalFilename = "FilmCamera-Original.dng"
-                    request.addResource(with: .photo, fileURL: rawURL, options: rawOptions)
-                    let jpegOptions = PHAssetResourceCreationOptions()
-                    jpegOptions.originalFilename = "FilmCamera-\(self.selectedLook.id).jpg"
-                    jpegOptions.uniformTypeIdentifier = UTType.jpeg.identifier
-                    request.addResource(with: .alternatePhoto, data: jpeg, options: jpegOptions)
-                } else {
-                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    let rawRequest = PHAssetCreationRequest.forAsset()
+                    let options = PHAssetResourceCreationOptions()
+                    options.originalFilename = "FilmCamera-Original.dng"
+                    options.uniformTypeIdentifier = "com.adobe.raw-image"
+                    rawRequest.addResource(with: .photo, fileURL: rawURL, options: options)
                 }
             }
             statusMessage = rawURL == nil
-                ? "Saved \(selectedLook.title) JPEG."
-                : "Saved developed \(selectedLook.title) + original RAW."
+                ? "Saved developed \(selectedLook.title) JPEG."
+                : "Saved developed \(selectedLook.title) JPEG + original DNG."
         } catch {
             statusMessage = "Image rendered, but saving failed: \(error.localizedDescription)"
         }
