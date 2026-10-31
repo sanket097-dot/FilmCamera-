@@ -34,6 +34,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Package Xcode project
+        run: |
+          zip -r FilmCamera-Xcode-Project.zip FilmCamera.xcodeproj FilmCamera project.yml README.md
+
       - name: Package IPA
         run: |
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FilmCamera.app"
@@ -46,3 +50,9 @@ jobs:
         with:
           name: FilmCamera-unsigned-ipa
           path: FilmCamera-unsigned.ipa
+
+      - name: Upload Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilmCamera-Xcode-Project
+          path: FilmCamera-Xcode-Project.zip
